@@ -27,7 +27,7 @@ export default function NewReconciliation() {
     setPurchaseFile(file);
     setError(null);
     try {
-      const preview = await getPreviewRows(file);
+      const preview = await getPreviewRows(file, "purchase");
       setPurchasePreview(preview);
     } catch {
       setPurchasePreview([]);
@@ -38,7 +38,7 @@ export default function NewReconciliation() {
     setGstr2bFile(file);
     setError(null);
     try {
-      const preview = await getPreviewRows(file);
+      const preview = await getPreviewRows(file, "gstr2b");
       setGstr2bPreview(preview);
     } catch {
       setGstr2bPreview([]);
@@ -56,6 +56,19 @@ export default function NewReconciliation() {
         parseFile(purchaseFile, "purchase") as Promise<PurchaseRecord[]>,
         parseFile(gstr2bFile, "gstr2b") as Promise<GSTR2BRecord[]>,
       ]);
+
+      if (purchaseRecords.length === 0) {
+        setError(
+          "No valid records found in the purchase register. Check the file format and contents."
+        );
+        return;
+      }
+      if (gstr2bRecords.length === 0) {
+        setError(
+          "No valid records found in the GSTR-2B file. Check the file format and contents."
+        );
+        return;
+      }
 
       const run = await submitReconciliation({
         purchaseRecords,

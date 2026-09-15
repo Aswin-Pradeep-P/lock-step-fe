@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { StatsCards } from "@/components/dashboard/StatsCards";
 import { RecentRuns } from "@/components/dashboard/RecentRuns";
@@ -12,6 +12,7 @@ import { FilePlus } from "lucide-react";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { runs, vendors, setRuns, setVendors } = useStore();
   const [loading, setLoading] = useState(true);
 
@@ -31,7 +32,7 @@ export default function Dashboard() {
       }
     }
     loadData();
-  }, [setRuns, setVendors]);
+  }, [setRuns, setVendors, location.key]);
 
   if (loading) {
     return (

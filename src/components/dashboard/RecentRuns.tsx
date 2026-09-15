@@ -64,9 +64,11 @@ export function RecentRuns({ runs }: RecentRunsProps) {
           </TableHeader>
           <TableBody>
             {runs.map((run) => {
-              const matchPct = Math.round(
-                ((run.matchedCount + run.lowRiskCount) / run.totalRecords) * 100
-              );
+              const matchPct = run.totalRecords > 0
+                ? Math.round(
+                    ((run.matchedCount + run.lowRiskCount) / run.totalRecords) * 100
+                  )
+                : 0;
               const atRisk = run.highRiskCount + run.cannotFileCount;
               return (
                 <TableRow

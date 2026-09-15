@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import type { ErrorRequestHandler } from "express";
 import { createSeedRun, seedVendors } from "./lib/mock-data.js";
 import { createReconcileRouter } from "./routes/reconcile.js";
 import { createRunsRouter } from "./routes/runs.js";
@@ -17,6 +18,13 @@ app.use(express.json({ limit: "10mb" }));
 app.use("/api/reconcile", createReconcileRouter(runs));
 app.use("/api/runs", createRunsRouter(runs));
 app.use("/api/vendors", createVendorsRouter(seedVendors));
+
+// Global error handler — returns JSON instead of HTML stack traces
+const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  console.error("Unhandled server error:", err);
+  res.status(500).json({ error: "Internal server error" });
+};
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Mock API server running on port ${PORT}`);

@@ -25,7 +25,10 @@ export function StatsCards({ runs, vendors }: StatsCardsProps) {
       ? Math.round(
           runs.reduce(
             (acc, r) =>
-              acc + ((r.matchedCount + r.lowRiskCount) / r.totalRecords) * 100,
+              acc +
+              (r.totalRecords > 0
+                ? ((r.matchedCount + r.lowRiskCount) / r.totalRecords) * 100
+                : 0),
             0
           ) / runs.length
         )

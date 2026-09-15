@@ -12,6 +12,14 @@ interface FileUploaderProps {
   onFileClear: () => void;
 }
 
+const ALLOWED_EXTENSIONS = [".xlsx", ".xls", ".csv"];
+
+function hasAllowedExtension(file: File): boolean {
+  return ALLOWED_EXTENSIONS.some((ext) =>
+    file.name.toLowerCase().endsWith(ext)
+  );
+}
+
 export function FileUploader({
   label,
   description,
@@ -27,7 +35,9 @@ export function FileUploader({
       e.preventDefault();
       setIsDragging(false);
       const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile) onFileSelect(droppedFile);
+      if (droppedFile && hasAllowedExtension(droppedFile)) {
+        onFileSelect(droppedFile);
+      }
     },
     [onFileSelect]
   );
@@ -45,6 +55,7 @@ export function FileUploader({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const selectedFile = e.target.files?.[0];
       if (selectedFile) onFileSelect(selectedFile);
+      e.target.value = "";
     },
     [onFileSelect]
   );

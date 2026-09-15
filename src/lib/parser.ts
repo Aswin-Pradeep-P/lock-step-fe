@@ -195,20 +195,41 @@ export async function parseFile(
   }
 }
 
-export function getPreviewRows(
-  file: File
+export async function getPreviewRows(
+  file: File,
+  type?: FileType
 ): Promise<Record<string, unknown>[]> {
-  return new Promise(async (resolve) => {
-    if (isXlsx(file)) {
-      const buffer = await readFileAsArrayBuffer(file);
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-        defval: "",
-      });
-      resolve(rows.slice(0, 5));
+  if (isXlsx(file)) {
+    const buffer = await readFileAsArrayBuffer(file);
+    const workbook = XLSX.read(buffer, { type: "array" });
+
+    let sheetName: string;
+    if (type === "gstr2b") {
+      sheetName =
+        workbook.SheetNames.find((n) => n.toLowerCase().includes("gstr")) ||
+        workbook.SheetNames.find((n) => n.toLowerCase().includes("2b")) ||
+        workbook.SheetNames[0];
+    } else if (type === "purchase") {
+      sheetName =
+        workbook.SheetNames.find(
+          (n) =>
+            n.toLowerCase().includes("tally") ||
+            n.toLowerCase().includes("igst") ||
+            n.toLowerCase().includes("cgst")
+        ) || workbook.SheetNames[0];
     } else {
-      const text = await readFileAsText(file);
+      sheetName = workbook.SheetNames[0];
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: "",
+      range: 4,
+    });
+    return rows.slice(0, 5);
+  } else {
+    const text = await readFileAsText(file);
+    return new Promise((resolve, reject) => {
       Papa.parse(text, {
         header: true,
         skipEmptyLines: true,
@@ -216,7 +237,8 @@ export function getPreviewRows(
         complete: (results) => {
           resolve(results.data as Record<string, unknown>[]);
         },
+        error: reject,
       });
-    }
-  });
+    });
+  }
 }

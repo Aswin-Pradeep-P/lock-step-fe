@@ -235,10 +235,16 @@ export function reconcile(
   // Pass 1: Exact match on invoice number + tax within ₹1
   for (const purchase of purchaseRecords) {
     const purchaseInvoice = normalize(purchase.voucherRefNo);
+    if (!purchaseInvoice) {
+      unmatchedPurchases.push(purchase);
+      continue;
+    }
     const purchaseTax = purchaseTotalTax(purchase);
 
     const exactIndex = unmatchedGstr2b.findIndex((gstr2b) => {
-      const invoiceMatch = normalize(gstr2b.invoiceNo) === purchaseInvoice;
+      const gstr2bInvoice = normalize(gstr2b.invoiceNo);
+      if (!gstr2bInvoice) return false;
+      const invoiceMatch = gstr2bInvoice === purchaseInvoice;
       const taxMatch = taxWithinTolerance(
         purchaseTax,
         gstr2bTotalTax(gstr2b),
@@ -273,15 +279,23 @@ export function reconcile(
   const stillUnmatched: PurchaseRecord[] = [];
 
   for (const purchase of unmatchedPurchases) {
+    const purchaseInvoiceNorm = normalize(purchase.voucherRefNo);
+    if (!purchaseInvoiceNorm) {
+      stillUnmatched.push(purchase);
+      continue;
+    }
     const purchaseTax = purchaseTotalTax(purchase);
     let bestIndex = -1;
     let bestScore = 0;
     let bestInvoiceDistance = INVOICE_FUZZY_MAX_DISTANCE + 1;
 
     unmatchedGstr2b.forEach((gstr2b, index) => {
+      const gstr2bInvoiceNorm = normalize(gstr2b.invoiceNo);
+      if (!gstr2bInvoiceNorm) return;
+
       const invoiceDistance = levenshtein(
-        normalize(purchase.voucherRefNo),
-        normalize(gstr2b.invoiceNo),
+        purchaseInvoiceNorm,
+        gstr2bInvoiceNorm,
       );
 
       if (invoiceDistance > INVOICE_FUZZY_MAX_DISTANCE) return;
@@ -321,13 +335,20 @@ export function reconcile(
     const gstr2b = unmatchedGstr2b.splice(bestIndex, 1)[0];
     const confidence = Math.min(90, Math.max(60, Math.round(60 + bestScore * 30)));
 
+    const fuzzyStatus: RiskCategory = isItcUnavailable(gstr2b)
+      ? "cannot_file"
+      : "low_risk";
+    const fuzzySummary = isItcUnavailable(gstr2b)
+      ? `Invoice ${purchase.voucherRefNo} from ${purchase.supplier} fuzzy-matches GSTR-2B entry "${gstr2b.invoiceNo}" but ITC is marked unavailable (${gstr2b.reason || "no reason provided"}). Cannot claim input tax credit.`
+      : summarizeFuzzyMatch(purchase, gstr2b, bestInvoiceDistance);
+
     records.push(
       buildReconciledRecord(
         purchase,
         gstr2b,
-        "low_risk",
+        fuzzyStatus,
         confidence,
-        summarizeFuzzyMatch(purchase, gstr2b, bestInvoiceDistance),
+        fuzzySummary,
       ),
     );
   }

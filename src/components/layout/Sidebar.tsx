@@ -51,7 +51,7 @@ export function Sidebar() {
             const isActive =
               item.href === "/"
                 ? location.pathname === "/"
-                : location.pathname.startsWith(item.href);
+                : location.pathname === item.href;
             return (
               <Link
                 key={item.href}

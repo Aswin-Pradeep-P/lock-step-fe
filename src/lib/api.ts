@@ -17,10 +17,23 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+    let serverMessage = `API error: ${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (body?.error) {
+        serverMessage = body.error;
+      }
+    } catch {
+      // response wasn't JSON — keep default message
+    }
+    throw new Error(serverMessage);
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    throw new Error("Invalid JSON response from server");
+  }
 }
 
 export async function fetchRuns(): Promise<ReconciliationRunSummary[]> {

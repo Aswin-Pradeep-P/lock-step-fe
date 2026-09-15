@@ -1,4 +1,4 @@
-import { useMemo, useState, Fragment } from "react";
+import { useMemo, useState, useEffect, Fragment } from "react";
 import {
   Table,
   TableBody,
@@ -61,6 +61,11 @@ export function RecordTable({
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    setPage(0);
+    setExpandedRow(null);
+  }, [filter, searchQuery]);
 
   const filtered = useMemo(() => {
     let result = records;

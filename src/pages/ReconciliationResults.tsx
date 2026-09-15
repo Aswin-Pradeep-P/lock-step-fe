@@ -64,9 +64,23 @@ export default function ReconciliationResults() {
     );
   }
 
-  const filteredCount = activeFilter
-    ? run.records.filter((r) => r.status === activeFilter).length
-    : run.records.length;
+  const filteredCount = (() => {
+    let result = run.records;
+    if (activeFilter) {
+      result = result.filter((r) => r.status === activeFilter);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (r) =>
+          r.invoiceNo.toLowerCase().includes(q) ||
+          r.supplierName.toLowerCase().includes(q) ||
+          r.gstin.toLowerCase().includes(q) ||
+          r.aiSummary.toLowerCase().includes(q)
+      );
+    }
+    return result.length;
+  })();
 
   return (
     <div>
