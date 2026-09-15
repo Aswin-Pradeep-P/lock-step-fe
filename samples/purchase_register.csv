@@ -1,0 +1,16 @@
+Date,Particulars,Buyer/Supplier,Voucher Type,Voucher No.,Voucher Ref. No.,Voucher Ref. Date,Narration,Gross Total,IGST Input,CGST Input,SGST Input
+2024-08-01,Server Hosting,CloudNine Technologies Pvt Ltd,Purchase,PV-CN-001,CN/INV/2024/801,2024-07-28,Annual cloud hosting renewal,236000,36000,0,0
+2024-08-02,Office Supplies,Prestige Stationery House,Purchase,PV-PSH-002,PSH-8802,2024-07-30,Bulk stationery order for Q3,23600,0,1800,1800
+2024-08-03,Raw Materials,Steelcraft Industries Ltd,Purchase,PV-SC-003,SCI/PO/4410,2024-08-01,MS flat bars 500kg,590000,90000,0,0
+2024-08-04,Professional Services,BrightMinds Consulting LLP,Purchase,PV-BM-004,BM-2024-1178,2024-08-01,SAP implementation Phase 2,354000,54000,0,0
+2024-08-05,Electrical Components,Laxmi Electricals & Trading Co,Purchase,PV-LET-005,LET/INV/0556,2024-08-02,Panel boards and MCBs,141600,21600,0,0
+2024-08-06,Office Rent,Horizon Realty Partners,Purchase,PV-HRP-006,HRP/RENT/AUG24,2024-08-01,Office rent August 2024,177000,0,13500,13500
+2024-08-07,IT Equipment,DigiWorld Systems Pvt Ltd,Purchase,PV-DW-007,DWS-24-3344,2024-08-03,Laptop and peripherals x10,472000,72000,0,0
+2024-08-08,Logistics,FastTrack Cargo Services,Purchase,PV-FTC-008,FTC/BL/9921,2024-08-04,Freight charges Chennai-Bangalore,82600,12600,0,0
+2024-08-09,Packaging Material,GreenPack Solutions,Purchase,PV-GPS-009,GPS-2024-221,2024-08-04,Corrugated boxes 2000 units,59000,9000,0,0
+2024-08-10,Security Services,ShieldGuard Enterprises,Purchase,PV-SGE-010,SGE/INV/AUG-01,2024-08-05,Monthly security contract,94400,0,7200,7200
+2024-08-11,Chemical Supplies,Apex Chemicals Pvt Ltd,Purchase,PV-AC-011,APEX-0881,2024-08-06,Industrial solvents 200L,165200,25200,0,0
+2024-08-12,Machinery Parts,Bharat Heavy Works,Purchase,PV-BHW-012,BHW/SP/4419,2024-08-07,CNC spindle replacement,295000,45000,0,0
+2024-08-13,Catering,Annapurna Food Services,Purchase,PV-AFS-013,AFS/INV/1334,2024-08-08,Monthly canteen contract Aug,45000,0,3438,3438
+2024-08-14,Transport,Nandi Logistics Pvt Ltd,Purchase,PV-NL-014,NL-WB-7782,2024-08-09,Warehouse to port transport,78500,11950,0,0
+2024-08-15,Lab Testing,Sai Analytical Labs,Purchase,PV-SAL-015,SAL/RPT/2024-55,2024-08-10,Quality testing batch QA-445,32400,4940,0,0

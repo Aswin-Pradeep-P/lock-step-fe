@@ -1,32 +1,55 @@
-# React + TypeScript + Vite
+# Lockstep — GST Reconciliation
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Lockstep helps businesses reconcile their purchase registers (Tally exports) against GSTR-2B government portal data, categorizing mismatches into risk buckets so you can act before filing.
 
-Currently, two official plugins are available:
+## Prerequisites
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Node.js** v18+
+- **npm** v9+
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+# Install dependencies
+npm install
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+# Start both frontend and mock API server
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+This runs:
+- **Frontend** at [http://localhost:5173](http://localhost:5173)
+- **Mock API** at [http://localhost:3001](http://localhost:3001) (proxied through Vite)
+
+## Available Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start frontend + mock server concurrently |
+| `npm run dev:client` | Start Vite dev server only |
+| `npm run dev:server` | Start Express mock server only |
+| `npm run build` | TypeScript check + production build |
+| `npm run preview` | Preview production build |
+
+## Tech Stack
+
+- React 18, Vite, TypeScript
+- Tailwind CSS, shadcn/ui
+- React Router v6, Zustand
+- SheetJS (xlsx), PapaParse
+- Recharts, Lucide Icons
+- Express (mock API server)
+
+## Project Structure
+
+```
+src/
+  components/       # UI components (layout, dashboard, reconciliation, results)
+  pages/            # Dashboard, NewReconciliation, ReconciliationResults
+  lib/              # API client, file parser, CSV export, utilities
+  store/            # Zustand state management
+  types/            # TypeScript interfaces
+server/
+  routes/           # Express API routes (reconcile, runs, vendors)
+  lib/              # Reconciliation engine, seed data
+```

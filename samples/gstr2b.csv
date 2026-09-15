@@ -1,0 +1,13 @@
+GSTIN of supplier,Trade/Legal name,Invoice number,Invoice type,Invoice Date,Invoice Value(₹),Place of supply,Supply Attract Reverse Charge,Taxable Value (₹),Integrated Tax(₹),Central Tax(₹),State/UT Tax(₹),Cess(₹),GSTR-1/IFF/GSTR-5 Period,GSTR-1/IFF/GSTR-5 Filing Date,ITC Availability,Reason,Applicable % of Tax Rate,Source,IRN,IRN Date
+29AAACN5678P1Z3,CloudNine Technologies Pvt Ltd,CN/INV/2024/801,Regular,2024-07-28,236000,29-Karnataka,N,200000,36000,0,0,0,082024,2024-09-11,Yes,,18%,GSTR-1,,
+29AAABP1234M1Z8,Prestige Stationery House,PSH-8802,Regular,2024-07-30,23600,29-Karnataka,N,20000,0,1800,1800,0,082024,2024-09-11,Yes,,18%,GSTR-1,,
+27AAACS9876K1Z1,Steelcraft Industries Ltd,SCI/PO/4410,Regular,2024-08-01,590000,27-Maharashtra,N,500000,90000,0,0,0,082024,2024-09-10,Yes,,18%,GSTR-1,,
+29AAABR3456J1Z5,BrightMinds Consulting LLP,BM-2024-1178,Regular,2024-08-01,354000,29-Karnataka,N,300000,54000,0,0,0,082024,2024-09-11,Yes,,18%,GSTR-1,,
+29AAACL5544G1Z9,Laxmi Electricals & Trading Co,LET/INV/O556,Regular,2024-08-02,141600,29-Karnataka,N,120000,21600,0,0,0,082024,2024-09-11,Yes,,18%,GSTR-1,,
+29AAACH7788R1Z4,Horizon Realty Partners,HRP/RENT/AUG24,Regular,2024-08-01,177000,29-Karnataka,N,150000,0,13500,13500,0,082024,2024-09-10,Yes,,18%,GSTR-1,,
+29AAACD2233W1Z6,DigiWorld Systems Pvt Ltd,DWS-24-3344,Regular,2024-08-03,472000,29-Karnataka,N,400000,72000,0,0,0,082024,2024-09-11,Yes,,18%,GSTR-1,,
+29AAACF8899T1Z2,FastTrack Cargo Services,FTC/BL/9921,Regular,2024-08-04,82600,29-Karnataka,N,70000,12600,0,0,0,082024,2024-09-11,Yes,,18%,GSTR-1,,
+29AAACG4455S1Z7,GreenPack Solutions,GPS-2024-221,Regular,2024-08-04,59000,29-Karnataka,N,50000,9000,0,0,0,082024,2024-09-10,Yes,,18%,GSTR-1,,
+29AAACS3322E1Z0,ShieldGuard Enterprises,SGE/INV/AUG-O1,Regular,2024-08-05,94400,29-Karnataka,N,80000,0,7200,7200,0,082024,2024-09-11,Yes,,18%,GSTR-1,,
+36AAACA7766X1Z8,Apex Chemicals Pvt Ltd,APEX-O881,Regular,2024-08-06,165200,36-Telangana,N,140000,25200,0,0,0,082024,2024-09-09,No,Supplier return not filed for the tax period,18%,GSTR-1,,
+27AAACB1199H1Z3,Bharat Heavy Works,BHW/SP/4419,Regular,2024-08-07,295000,27-Maharashtra,N,250000,45000,0,0,0,082024,2024-09-11,No,ITC restricted under Section 17(5),18%,GSTR-1,,
