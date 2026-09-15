@@ -3,6 +3,7 @@ import express from "express";
 import type { ErrorRequestHandler } from "express";
 import { createSeedRun, seedVendors } from "./lib/mock-data.js";
 import { startMockTallyServer } from "./lib/mock-tally-server.js";
+import { createActionsRouter } from "./routes/actions.js";
 import { createReconcileRouter } from "./routes/reconcile.js";
 import { createRunsRouter } from "./routes/runs.js";
 import { createTallyRouter } from "./routes/tally.js";
@@ -19,6 +20,7 @@ app.use(express.json({ limit: "10mb" }));
 
 app.use("/api/reconcile", createReconcileRouter(runs));
 app.use("/api/runs", createRunsRouter(runs));
+app.use("/api/runs", createActionsRouter(runs));
 app.use("/api/tally", createTallyRouter());
 app.use("/api/vendors", createVendorsRouter(seedVendors));
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { SummaryCards } from "@/components/results/SummaryCards";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { fetchRun } from "@/lib/api";
 import { statusLabel } from "@/lib/export";
-import type { ReconciliationRun, RiskCategory } from "@/types";
+import type { ReconciliationRun, ReconciledRecord, RiskCategory } from "@/types";
 import { Loader2, Search, X, ArrowLeft } from "lucide-react";
 
 export default function ReconciliationResults() {
@@ -41,6 +41,17 @@ export default function ReconciliationResults() {
   const handleFilterToggle = (category: RiskCategory) => {
     setActiveFilter(activeFilter === category ? null : category);
   };
+
+  const handleRecordUpdate = useCallback(
+    (updated: ReconciledRecord) => {
+      if (!run) return;
+      setRun({
+        ...run,
+        records: run.records.map((r) => (r.id === updated.id ? updated : r)),
+      });
+    },
+    [run],
+  );
 
   if (loading) {
     return (
@@ -86,9 +97,8 @@ export default function ReconciliationResults() {
     <div>
       <Header title="Reconciliation Results">
         <DownloadButton
-          records={run.records}
+          run={run}
           filter={activeFilter}
-          runId={run.id}
         />
       </Header>
 
@@ -144,6 +154,8 @@ export default function ReconciliationResults() {
           records={run.records}
           filter={activeFilter}
           searchQuery={searchQuery}
+          runId={run.id}
+          onRecordUpdate={handleRecordUpdate}
         />
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, Fragment } from "react";
+import { useMemo, useState, useEffect, useCallback, Fragment } from "react";
 import {
   Table,
   TableBody,
@@ -13,10 +13,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatCurrency } from "@/lib/utils";
+import { ActivityTimeline } from "@/components/results/ActivityTimeline";
+import { NudgeVendorModal } from "@/components/results/NudgeVendorModal";
+import { formatCurrency, cn } from "@/lib/utils";
 import { statusLabel } from "@/lib/export";
+import { updateRecordAction } from "@/lib/api";
 import {
   MoreHorizontal,
   ArrowUpDown,
@@ -25,16 +29,29 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Send,
+  CheckCircle2,
+  Sparkles,
+  RefreshCw,
+  ArrowRightLeft,
+  ShieldAlert,
 } from "lucide-react";
-import type { ReconciledRecord, RiskCategory } from "@/types";
+import type { ReconciledRecord, RiskCategory, SuggestionAction } from "@/types";
 
 interface RecordTableProps {
   records: ReconciledRecord[];
   filter: RiskCategory | null;
   searchQuery: string;
+  runId: string;
+  onRecordUpdate: (updated: ReconciledRecord) => void;
 }
 
-type SortField = "invoiceNo" | "invoiceDate" | "supplierName" | "totalTax" | "matchConfidence";
+type SortField =
+  | "invoiceNo"
+  | "invoiceDate"
+  | "supplierName"
+  | "totalTax"
+  | "matchConfidence";
 type SortDir = "asc" | "desc";
 
 function statusBadgeVariant(status: RiskCategory) {
@@ -50,22 +67,60 @@ function statusBadgeVariant(status: RiskCategory) {
   }
 }
 
+function hasNudge(record: ReconciledRecord): boolean {
+  return record.activityLog?.some((e) => e.type === "nudge_sent") ?? false;
+}
+
+function suggestionIcon(action: SuggestionAction) {
+  switch (action) {
+    case "auto_correct":
+      return <RefreshCw className="h-3.5 w-3.5" />;
+    case "nudge_vendor":
+      return <Send className="h-3.5 w-3.5" />;
+    case "switch_vendor":
+      return <ArrowRightLeft className="h-3.5 w-3.5" />;
+    case "accept_risk":
+      return <CheckCircle2 className="h-3.5 w-3.5" />;
+    case "escalate_urgent":
+      return <ShieldAlert className="h-3.5 w-3.5" />;
+  }
+}
+
 const PAGE_SIZE = 10;
 
 export function RecordTable({
   records,
   filter,
   searchQuery,
+  runId,
+  onRecordUpdate,
 }: RecordTableProps) {
   const [sortField, setSortField] = useState<SortField>("invoiceNo");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [nudgeRecord, setNudgeRecord] = useState<ReconciledRecord | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     setPage(0);
     setExpandedRow(null);
   }, [filter, searchQuery]);
+
+  const handleAction = useCallback(
+    async (record: ReconciledRecord, action: "flagged" | "escalated" | "resolved") => {
+      setActionLoading(record.id);
+      try {
+        const updated = await updateRecordAction(runId, record.id, action);
+        onRecordUpdate(updated);
+      } catch (err) {
+        console.error(`Failed to ${action} record:`, err);
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [runId, onRecordUpdate],
+  );
 
   const filtered = useMemo(() => {
     let result = records;
@@ -79,7 +134,7 @@ export function RecordTable({
           r.invoiceNo.toLowerCase().includes(q) ||
           r.supplierName.toLowerCase().includes(q) ||
           r.gstin.toLowerCase().includes(q) ||
-          r.aiSummary.toLowerCase().includes(q)
+          r.aiSummary.toLowerCase().includes(q),
       );
     }
     return result;
@@ -177,15 +232,40 @@ export function RecordTable({
               paged.map((record) => (
                 <Fragment key={record.id}>
                   <TableRow
-                    className="cursor-pointer"
+                    className={cn(
+                      "cursor-pointer border-l-2 transition-colors",
+                      record.actionStatus === "flagged"
+                        ? "border-l-risk-high bg-risk-high/[0.02]"
+                        : record.actionStatus === "escalated"
+                          ? "border-l-risk-critical bg-risk-critical/[0.02]"
+                          : record.actionStatus === "resolved"
+                            ? "border-l-risk-low bg-risk-low/[0.02]"
+                            : "border-l-transparent",
+                    )}
                     onClick={() =>
                       setExpandedRow(
-                        expandedRow === record.id ? null : record.id
+                        expandedRow === record.id ? null : record.id,
                       )
                     }
                   >
                     <TableCell className="font-mono text-sm">
-                      {record.invoiceNo}
+                      <div className="flex items-center gap-2">
+                        <span>{record.invoiceNo}</span>
+                        <div className="flex items-center gap-1">
+                          {record.actionStatus === "flagged" && (
+                            <Flag className="h-3 w-3 text-risk-high" />
+                          )}
+                          {record.actionStatus === "escalated" && (
+                            <AlertTriangle className="h-3 w-3 text-risk-critical" />
+                          )}
+                          {record.actionStatus === "resolved" && (
+                            <CheckCircle2 className="h-3 w-3 text-risk-low" />
+                          )}
+                          {hasNudge(record) && (
+                            <Send className="h-3 w-3 text-primary" />
+                          )}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm">
                       {record.invoiceDate}
@@ -225,18 +305,74 @@ export function RecordTable({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedRow(
+                                expandedRow === record.id ? null : record.id,
+                              );
+                            }}
+                          >
                             <Eye className="mr-2 h-4 w-4" />
                             View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <Flag className="mr-2 h-4 w-4" />
-                            Flag for Review
+
+                          <DropdownMenuSeparator />
+
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setNudgeRecord(record);
+                            }}
+                          >
+                            <Send className="mr-2 h-4 w-4" />
+                            Nudge Vendor
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">
-                            <AlertTriangle className="mr-2 h-4 w-4" />
-                            Escalate
-                          </DropdownMenuItem>
+
+                          {record.actionStatus !== "flagged" &&
+                            record.actionStatus !== "escalated" && (
+                              <DropdownMenuItem
+                                disabled={actionLoading === record.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAction(record, "flagged");
+                                }}
+                              >
+                                <Flag className="mr-2 h-4 w-4" />
+                                Flag for Review
+                              </DropdownMenuItem>
+                            )}
+
+                          {record.actionStatus !== "escalated" && (
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              disabled={actionLoading === record.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAction(record, "escalated");
+                              }}
+                            >
+                              <AlertTriangle className="mr-2 h-4 w-4" />
+                              Escalate
+                            </DropdownMenuItem>
+                          )}
+
+                          {(record.actionStatus === "flagged" ||
+                            record.actionStatus === "escalated") && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                disabled={actionLoading === record.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAction(record, "resolved");
+                                }}
+                              >
+                                <CheckCircle2 className="mr-2 h-4 w-4 text-risk-low" />
+                                Mark Resolved
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -244,21 +380,152 @@ export function RecordTable({
                   {expandedRow === record.id && (
                     <TableRow key={`${record.id}-detail`}>
                       <TableCell colSpan={9} className="bg-muted/30">
-                        <div className="py-2 px-4 space-y-2">
-                          <div className="text-sm font-medium">AI Summary</div>
-                          <p className="text-sm text-muted-foreground leading-relaxed">
-                            {record.aiSummary}
-                          </p>
-                          <div className="flex gap-4 text-xs text-muted-foreground pt-1">
-                            <span>
-                              IGST: {formatCurrency(record.igst)}
-                            </span>
-                            <span>
-                              CGST: {formatCurrency(record.cgst)}
-                            </span>
-                            <span>
-                              SGST: {formatCurrency(record.sgst)}
-                            </span>
+                        <div className="py-3 px-4 space-y-4">
+                          <div>
+                            <div className="text-sm font-medium">
+                              AI Summary
+                            </div>
+                            <p className="text-sm text-muted-foreground leading-relaxed mt-1">
+                              {record.aiSummary}
+                            </p>
+                          </div>
+
+                          {record.aiSuggestions &&
+                            record.aiSuggestions.length > 0 && (
+                              <details className="group">
+                                <summary className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors list-none [&::-webkit-details-marker]:hidden">
+                                  <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+                                  <Sparkles className="h-3 w-3 text-primary" />
+                                  AI Suggestions ({record.aiSuggestions.length})
+                                </summary>
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {record.aiSuggestions.map((suggestion) => (
+                                    <button
+                                      key={suggestion.id}
+                                      title={suggestion.description}
+                                      className={cn(
+                                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors hover:shadow-sm",
+                                        suggestion.action === "auto_correct" &&
+                                          "border-risk-low/30 text-risk-low hover:bg-risk-low/5",
+                                        suggestion.action === "nudge_vendor" &&
+                                          "border-primary/30 text-primary hover:bg-primary/5",
+                                        suggestion.action === "switch_vendor" &&
+                                          "border-risk-high/30 text-risk-high hover:bg-risk-high/5",
+                                        suggestion.action === "accept_risk" &&
+                                          "border-risk-low/30 text-risk-low hover:bg-risk-low/5",
+                                        suggestion.action ===
+                                          "escalate_urgent" &&
+                                          "border-risk-critical/30 text-risk-critical hover:bg-risk-critical/5",
+                                      )}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (
+                                          suggestion.action === "nudge_vendor"
+                                        ) {
+                                          setNudgeRecord(record);
+                                        } else if (
+                                          suggestion.action ===
+                                          "escalate_urgent"
+                                        ) {
+                                          handleAction(record, "escalated");
+                                        } else if (
+                                          suggestion.action === "accept_risk"
+                                        ) {
+                                          handleAction(record, "resolved");
+                                        } else if (
+                                          suggestion.action === "auto_correct"
+                                        ) {
+                                          handleAction(record, "resolved");
+                                        } else if (
+                                          suggestion.action === "switch_vendor"
+                                        ) {
+                                          handleAction(record, "flagged");
+                                        }
+                                      }}
+                                    >
+                                      {suggestionIcon(suggestion.action)}
+                                      {suggestion.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+
+                          <div className="flex gap-4 text-xs text-muted-foreground">
+                            <span>IGST: {formatCurrency(record.igst)}</span>
+                            <span>CGST: {formatCurrency(record.cgst)}</span>
+                            <span>SGST: {formatCurrency(record.sgst)}</span>
+                          </div>
+
+                          {record.activityLog &&
+                            record.activityLog.length > 1 && (
+                              <div className="border-t pt-3">
+                                <ActivityTimeline
+                                  entries={record.activityLog}
+                                />
+                              </div>
+                            )}
+
+                          <div className="border-t pt-3 flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setNudgeRecord(record);
+                              }}
+                            >
+                              <Send className="h-3 w-3" />
+                              Nudge Vendor
+                            </Button>
+                            {record.actionStatus !== "flagged" &&
+                              record.actionStatus !== "escalated" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5 text-xs"
+                                  disabled={actionLoading === record.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAction(record, "flagged");
+                                  }}
+                                >
+                                  <Flag className="h-3 w-3" />
+                                  Flag for Review
+                                </Button>
+                              )}
+                            {record.actionStatus !== "escalated" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 text-xs text-destructive"
+                                disabled={actionLoading === record.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAction(record, "escalated");
+                                }}
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                Escalate
+                              </Button>
+                            )}
+                            {(record.actionStatus === "flagged" ||
+                              record.actionStatus === "escalated") && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 text-xs text-risk-low"
+                                disabled={actionLoading === record.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAction(record, "resolved");
+                                }}
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                Resolve
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </TableCell>
@@ -300,6 +567,21 @@ export function RecordTable({
             </Button>
           </div>
         </div>
+      )}
+
+      {nudgeRecord && (
+        <NudgeVendorModal
+          open={!!nudgeRecord}
+          onOpenChange={(open) => {
+            if (!open) setNudgeRecord(null);
+          }}
+          record={nudgeRecord}
+          runId={runId}
+          onRecordUpdate={(updated) => {
+            onRecordUpdate(updated);
+            setNudgeRecord(null);
+          }}
+        />
       )}
     </div>
   );

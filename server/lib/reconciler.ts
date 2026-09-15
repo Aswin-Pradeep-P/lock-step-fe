@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AiSuggestion,
+  ActivityEntry,
   GSTR2BRecord,
   PurchaseRecord,
   ReconciledRecord,
@@ -116,6 +118,114 @@ function findVendorItcStatus(
   return "unknown";
 }
 
+function generateSuggestions(
+  purchase: PurchaseRecord,
+  gstr2b: GSTR2BRecord | undefined,
+  status: RiskCategory,
+): AiSuggestion[] {
+  const suggestions: AiSuggestion[] = [];
+  const totalTax = purchaseTotalTax(purchase);
+
+  if (status === "matched") {
+    suggestions.push({
+      id: randomUUID(),
+      action: "accept_risk",
+      label: "Claim ITC",
+      description: `Invoice verified — safe to include ${formatInr(totalTax)} ITC in your next GSTR-3B filing.`,
+      confidence: 98,
+    });
+    return suggestions;
+  }
+
+  if (status === "low_risk" && gstr2b) {
+    const invDistance = levenshtein(
+      normalize(purchase.voucherRefNo),
+      normalize(gstr2b.invoiceNo),
+    );
+    if (invDistance > 0 && invDistance <= INVOICE_FUZZY_MAX_DISTANCE) {
+      suggestions.push({
+        id: randomUUID(),
+        action: "auto_correct",
+        label: `Auto-correct invoice number`,
+        description: `Likely typo: your records show "${purchase.voucherRefNo}" but GSTR-2B shows "${gstr2b.invoiceNo}" (${invDistance} character difference). Auto-correct to match and claim ITC.`,
+        confidence: 85,
+      });
+    }
+
+    const taxDiff = Math.abs(totalTax - gstr2bTotalTax(gstr2b));
+    if (taxDiff > TAX_EXACT_TOLERANCE) {
+      suggestions.push({
+        id: randomUUID(),
+        action: "nudge_vendor",
+        label: "Request vendor to amend",
+        description: `Tax mismatch of ${formatInr(taxDiff)} — ask ${gstr2b.tradeName} to verify and amend their GSTR-1 filing.`,
+        confidence: 75,
+      });
+    }
+  }
+
+  if (status === "high_risk") {
+    suggestions.push({
+      id: randomUUID(),
+      action: "nudge_vendor",
+      label: "Nudge vendor to file GSTR-1",
+      description: `${purchase.supplier} has not reported this invoice. Send a compliance reminder — ${formatInr(totalTax)} ITC is blocked until they file.`,
+      confidence: 90,
+    });
+
+    suggestions.push({
+      id: randomUUID(),
+      action: "escalate_urgent",
+      label: "Escalate — ITC deadline approaching",
+      description: `If unresolved within 180 days, you permanently lose ${formatInr(totalTax)} in ITC. Flag for senior finance review now.`,
+      confidence: 80,
+    });
+
+    suggestions.push({
+      id: randomUUID(),
+      action: "switch_vendor",
+      label: "Consider alternate vendor",
+      description: `${purchase.supplier} has compliance issues. Evaluate switching to a vendor with higher GST filing compliance to avoid recurring ITC risk.`,
+      confidence: 60,
+    });
+  }
+
+  if (status === "cannot_file") {
+    const reason = gstr2b?.reason || "ITC marked unavailable";
+    suggestions.push({
+      id: randomUUID(),
+      action: "escalate_urgent",
+      label: "Do not claim — escalate to tax advisor",
+      description: `ITC of ${formatInr(totalTax)} is legally blocked: ${reason}. Consult your tax advisor before including in GSTR-3B.`,
+      confidence: 95,
+    });
+
+    if (gstr2b?.reason?.includes("payment not made")) {
+      suggestions.push({
+        id: randomUUID(),
+        action: "nudge_vendor",
+        label: "Clear pending payment to unblock ITC",
+        description: `Rule 37 default — ITC is blocked because payment was not made within 180 days. Clear the outstanding amount to restore eligibility.`,
+        confidence: 88,
+      });
+    }
+
+    suggestions.push({
+      id: randomUUID(),
+      action: "switch_vendor",
+      label: "Flag vendor for review",
+      description: `${purchase.supplier} has ITC-blocked invoices. Review vendor compliance score and consider alternate suppliers for future orders.`,
+      confidence: 55,
+    });
+  }
+
+  return suggestions;
+}
+
+function formatInr(value: number): string {
+  return `₹${value.toLocaleString("en-IN")}`;
+}
+
 function buildReconciledRecord(
   purchase: PurchaseRecord,
   gstr2b: GSTR2BRecord | undefined,
@@ -129,8 +239,19 @@ function buildReconciledRecord(
   const taxableValue =
     gstr2b?.taxableValue ?? purchase.grossTotal - purchaseTotalTax(purchase);
 
-  return {
+  const recordId = randomUUID();
+  const now = new Date().toISOString();
+
+  const createdEntry: ActivityEntry = {
     id: randomUUID(),
+    timestamp: now,
+    type: "created",
+    description: `Record created during reconciliation`,
+    actor: "System",
+  };
+
+  return {
+    id: recordId,
     invoiceNo: purchase.voucherRefNo,
     invoiceDate: purchase.voucherRefDate || purchase.date,
     supplierName: purchase.supplier,
@@ -143,7 +264,9 @@ function buildReconciledRecord(
     status,
     matchConfidence: confidence,
     aiSummary,
-    action: "none",
+    aiSuggestions: generateSuggestions(purchase, gstr2b, status),
+    actionStatus: "none",
+    activityLog: [createdEntry],
     purchaseRecord: purchase,
     gstr2bRecord: gstr2b,
   };

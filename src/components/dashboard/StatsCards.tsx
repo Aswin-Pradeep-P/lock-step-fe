@@ -10,6 +10,7 @@ import {
   TrendingUp,
   AlertTriangle,
   ShieldAlert,
+  HandCoins,
 } from "lucide-react";
 import type { ReconciliationRunSummary, Vendor } from "@/types";
 
@@ -35,6 +36,10 @@ export function StatsCards({ runs, vendors }: StatsCardsProps) {
       : 0;
   const vendorsAtRisk = vendors.filter((v) => v.riskTier === "red").length;
   const totalTaxAtRisk = runs.reduce((acc, r) => acc + r.totalTaxAtRisk, 0);
+  const recordsNeedingReview = runs.reduce(
+    (acc, r) => acc + r.highRiskCount + r.cannotFileCount,
+    0,
+  );
 
   const stats = [
     {
@@ -54,20 +59,20 @@ export function StatsCards({ runs, vendors }: StatsCardsProps) {
       bg: "bg-risk-low/10",
     },
     {
+      title: "Payments at Risk",
+      value: formatNumber(recordsNeedingReview),
+      icon: HandCoins,
+      description: formatCurrency(totalTaxAtRisk) + " in ITC needs review",
+      color: "text-risk-high",
+      bg: "bg-risk-high/10",
+    },
+    {
       title: "Vendors At Risk",
       value: formatNumber(vendorsAtRisk),
       icon: AlertTriangle,
-      description: "Non-compliant vendors",
+      description: "Non-compliant — nudge or escalate",
       color: "text-risk-critical",
       bg: "bg-risk-critical/10",
-    },
-    {
-      title: "ITC At Risk",
-      value: formatCurrency(totalTaxAtRisk),
-      icon: ShieldAlert,
-      description: "Tax credit at risk of disallowance",
-      color: "text-risk-high",
-      bg: "bg-risk-high/10",
     },
   ];
 

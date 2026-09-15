@@ -3,7 +3,10 @@ import type {
   GSTR2BRecord,
   ReconciliationRun,
   ReconciliationRunSummary,
+  ReconciledRecord,
   Vendor,
+  ActionStatus,
+  NudgeChannel,
 } from "@/types";
 
 const BASE_URL = "/api";
@@ -94,5 +97,28 @@ export async function fetchTallyPurchaseRegister(
   return request<TallyPurchaseResult>("/tally/purchase-register", {
     method: "POST",
     body: JSON.stringify({ host, port, company, fromDate, toDate }),
+  });
+}
+
+export async function updateRecordAction(
+  runId: string,
+  recordId: string,
+  action: ActionStatus,
+): Promise<ReconciledRecord> {
+  return request<ReconciledRecord>(`/runs/${runId}/records/${recordId}/action`, {
+    method: "PATCH",
+    body: JSON.stringify({ action }),
+  });
+}
+
+export async function sendVendorNudge(
+  runId: string,
+  recordId: string,
+  channel: NudgeChannel,
+  message: string,
+): Promise<ReconciledRecord> {
+  return request<ReconciledRecord>(`/runs/${runId}/records/${recordId}/nudge`, {
+    method: "POST",
+    body: JSON.stringify({ channel, message }),
   });
 }

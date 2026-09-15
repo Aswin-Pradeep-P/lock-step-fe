@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { StatsCards } from "@/components/dashboard/StatsCards";
+import { TrendChart } from "@/components/dashboard/TrendChart";
 import { RecentRuns } from "@/components/dashboard/RecentRuns";
 import { VendorRiskList } from "@/components/dashboard/VendorRiskList";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,8 @@ export default function Dashboard() {
 
       <div className="space-y-6 p-6 lg:p-8">
         <StatsCards runs={runs} vendors={vendors} />
+
+        <TrendChart />
 
         <div className="grid gap-6 lg:grid-cols-2">
           <RecentRuns runs={runs} />

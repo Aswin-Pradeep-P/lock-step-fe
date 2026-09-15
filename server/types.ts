@@ -1,5 +1,27 @@
 export type RiskCategory = "matched" | "low_risk" | "high_risk" | "cannot_file";
 
+export type ActionStatus = "none" | "flagged" | "escalated" | "resolved";
+export type NudgeChannel = "email" | "whatsapp";
+
+export interface ActivityEntry {
+  id: string;
+  timestamp: string;
+  type: "created" | "flagged" | "escalated" | "resolved" | "nudge_sent";
+  description: string;
+  actor: string;
+  channel?: NudgeChannel;
+}
+
+export type SuggestionAction = "auto_correct" | "nudge_vendor" | "switch_vendor" | "accept_risk" | "escalate_urgent";
+
+export interface AiSuggestion {
+  id: string;
+  action: SuggestionAction;
+  label: string;
+  description: string;
+  confidence: number;
+}
+
 export interface PurchaseRecord {
   date: string;
   particulars: string;
@@ -53,7 +75,9 @@ export interface ReconciledRecord {
   status: RiskCategory;
   matchConfidence: number;
   aiSummary: string;
-  action: "none" | "ignore" | "flag" | "escalate";
+  aiSuggestions: AiSuggestion[];
+  actionStatus: ActionStatus;
+  activityLog: ActivityEntry[];
   purchaseRecord?: PurchaseRecord;
   gstr2bRecord?: GSTR2BRecord;
 }
