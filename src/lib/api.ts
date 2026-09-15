@@ -59,3 +59,40 @@ export async function submitReconciliation(data: {
 export async function fetchVendors(): Promise<Vendor[]> {
   return request<Vendor[]>("/vendors");
 }
+
+export interface TallyConnectionResult {
+  connected: boolean;
+  companies: string[];
+  warning?: string;
+  error?: string;
+}
+
+export interface TallyPurchaseResult {
+  records: PurchaseRecord[];
+  count: number;
+  company: string;
+  period: { fromDate: string; toDate: string };
+}
+
+export async function checkTallyConnection(
+  host: string,
+  port: number,
+): Promise<TallyConnectionResult> {
+  return request<TallyConnectionResult>("/tally/connect", {
+    method: "POST",
+    body: JSON.stringify({ host, port }),
+  });
+}
+
+export async function fetchTallyPurchaseRegister(
+  host: string,
+  port: number,
+  company: string,
+  fromDate: string,
+  toDate: string,
+): Promise<TallyPurchaseResult> {
+  return request<TallyPurchaseResult>("/tally/purchase-register", {
+    method: "POST",
+    body: JSON.stringify({ host, port, company, fromDate, toDate }),
+  });
+}

@@ -26,6 +26,7 @@
     "cors": "^2.8.6",
     "date-fns": "^4.4.0",
     "express": "^5.2.1",
+    "fast-xml-parser": "^5.11.1",
     "lucide-react": "^1.45.0",
     "papaparse": "^5.7.0",
     "react": "^19.2.8",
