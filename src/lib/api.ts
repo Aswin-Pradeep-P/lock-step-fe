@@ -25,6 +25,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
       const body = await response.json();
       if (body?.error) {
         serverMessage = body.error;
+      } else if (body?.detail) {
+        serverMessage = body.detail;
       }
     } catch {
       // response wasn't JSON — keep default message
