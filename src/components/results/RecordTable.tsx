@@ -16,148 +16,117 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ActivityTimeline } from "@/components/results/ActivityTimeline";
 import { NudgeVendorModal } from "@/components/results/NudgeVendorModal";
-import { formatCurrency, cn } from "@/lib/utils";
-import { statusLabel } from "@/lib/export";
-import { updateRecordAction } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
+import { STATUS_LABEL, bucketOf, reasonTag, canNudgeVendor } from "@/lib/risk";
+import { createInvoiceAction, fetchActionProposal } from "@/lib/api";
 import {
   MoreHorizontal,
   ArrowUpDown,
   Eye,
-  Flag,
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
   Send,
   CheckCircle2,
-  Sparkles,
-  RefreshCw,
-  ArrowRightLeft,
-  ShieldAlert,
+  ChevronRight,
+  Clock,
+  ShieldOff,
 } from "lucide-react";
-import type { ReconciledRecord, RiskCategory, SuggestionAction } from "@/types";
+import type { Invoice, RiskBucket, ActionProposal } from "@/types";
 
 interface RecordTableProps {
-  records: ReconciledRecord[];
-  filter: RiskCategory | null;
+  invoices: Invoice[];
+  filter: RiskBucket | null;
   searchQuery: string;
-  runId: string;
-  onRecordUpdate: (updated: ReconciledRecord) => void;
+  periodId: string;
+  onInvoiceUpdate: () => void;
 }
 
-type SortField =
-  | "invoiceNo"
-  | "invoiceDate"
-  | "supplierName"
-  | "totalTax"
-  | "matchConfidence";
+type SortField = "invoice_number" | "invoice_date" | "vendor_name" | "total_tax";
 type SortDir = "asc" | "desc";
 
-function statusBadgeVariant(status: RiskCategory) {
-  switch (status) {
-    case "matched":
-      return "default" as const;
-    case "low_risk":
+function bucketBadgeVariant(bucket: RiskBucket) {
+  switch (bucket) {
+    case "safe":
       return "success" as const;
-    case "high_risk":
+    case "moderate":
       return "warning" as const;
-    case "cannot_file":
+    case "high":
       return "danger" as const;
   }
 }
 
-function hasNudge(record: ReconciledRecord): boolean {
-  return record.activityLog?.some((e) => e.type === "nudge_sent") ?? false;
-}
-
-function suggestionIcon(action: SuggestionAction) {
-  switch (action) {
-    case "auto_correct":
-      return <RefreshCw className="h-3.5 w-3.5" />;
-    case "nudge_vendor":
-      return <Send className="h-3.5 w-3.5" />;
-    case "switch_vendor":
-      return <ArrowRightLeft className="h-3.5 w-3.5" />;
-    case "accept_risk":
-      return <CheckCircle2 className="h-3.5 w-3.5" />;
-    case "escalate_urgent":
-      return <ShieldAlert className="h-3.5 w-3.5" />;
-  }
+function searchText(invoice: Invoice): string {
+  return `${invoice.invoice_number} ${invoice.vendor_name ?? ""} ${invoice.vendor_gstin ?? ""} ${invoice.match_reason ?? ""}`.toLowerCase();
 }
 
 const PAGE_SIZE = 10;
 
 export function RecordTable({
-  records,
+  invoices,
   filter,
   searchQuery,
-  runId,
-  onRecordUpdate,
+  periodId,
+  onInvoiceUpdate,
 }: RecordTableProps) {
-  const [sortField, setSortField] = useState<SortField>("invoiceNo");
+  const [sortField, setSortField] = useState<SortField>("invoice_number");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [page, setPage] = useState(0);
-  const [nudgeRecord, setNudgeRecord] = useState<ReconciledRecord | null>(null);
+  const [nudgeInvoice, setNudgeInvoice] = useState<Invoice | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [proposals, setProposals] = useState<Record<string, ActionProposal>>({});
 
   useEffect(() => {
     setPage(0);
     setExpandedRow(null);
   }, [filter, searchQuery]);
 
-  const handleAction = useCallback(
-    async (record: ReconciledRecord, action: "flagged" | "escalated" | "resolved") => {
-      setActionLoading(record.id);
+  useEffect(() => {
+    if (!expandedRow || proposals[expandedRow]) return;
+    fetchActionProposal(expandedRow)
+      .then((p) => setProposals((prev) => ({ ...prev, [expandedRow]: p })))
+      .catch(() => {
+        // Informational panel only — a failed fetch just leaves it blank.
+      });
+  }, [expandedRow, proposals]);
+
+  const handleResolve = useCallback(
+    async (invoice: Invoice) => {
+      setActionLoading(invoice.id);
       try {
-        const updated = await updateRecordAction(runId, record.id, action);
-        onRecordUpdate(updated);
-      } catch (err) {
-        console.error(`Failed to ${action} record:`, err);
+        await createInvoiceAction(invoice.id, "MARKED_RESOLVED");
+        onInvoiceUpdate();
       } finally {
         setActionLoading(null);
       }
     },
-    [runId, onRecordUpdate],
+    [onInvoiceUpdate],
   );
 
   const filtered = useMemo(() => {
-    let result = records;
-    if (filter) {
-      result = result.filter((r) => r.status === filter);
-    }
+    let result = invoices;
+    if (filter) result = result.filter((i) => bucketOf(i.status) === filter);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (r) =>
-          r.invoiceNo.toLowerCase().includes(q) ||
-          r.supplierName.toLowerCase().includes(q) ||
-          r.gstin.toLowerCase().includes(q) ||
-          r.aiSummary.toLowerCase().includes(q),
-      );
+      result = result.filter((i) => searchText(i).includes(q));
     }
     return result;
-  }, [records, filter, searchQuery]);
+  }, [invoices, filter, searchQuery]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
-        case "invoiceNo":
-          cmp = a.invoiceNo.localeCompare(b.invoiceNo);
+        case "invoice_number":
+          cmp = a.invoice_number.localeCompare(b.invoice_number);
           break;
-        case "invoiceDate":
-          cmp = a.invoiceDate.localeCompare(b.invoiceDate);
+        case "invoice_date":
+          cmp = (a.invoice_date ?? "").localeCompare(b.invoice_date ?? "");
           break;
-        case "supplierName":
-          cmp = a.supplierName.localeCompare(b.supplierName);
+        case "vendor_name":
+          cmp = (a.vendor_name ?? "").localeCompare(b.vendor_name ?? "");
           break;
-        case "totalTax":
-          cmp = a.totalTax - b.totalTax;
-          break;
-        case "matchConfidence":
-          cmp = a.matchConfidence - b.matchConfidence;
+        case "total_tax":
+          cmp = Number(a.total_tax) - Number(b.total_tax);
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;
@@ -203,336 +172,216 @@ export function RecordTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <SortableHead field="invoiceNo">Invoice No</SortableHead>
-              <SortableHead field="invoiceDate">Date</SortableHead>
-              <SortableHead field="supplierName">Supplier</SortableHead>
+              <SortableHead field="invoice_number">Invoice No</SortableHead>
+              <SortableHead field="invoice_date">Date</SortableHead>
+              <SortableHead field="vendor_name">Vendor</SortableHead>
               <TableHead>GSTIN</TableHead>
               <TableHead className="text-right">Taxable Value</TableHead>
-              <SortableHead field="totalTax" className="text-right">
+              <SortableHead field="total_tax" className="text-right">
                 Total Tax
               </SortableHead>
               <TableHead className="text-center">Status</TableHead>
-              <SortableHead field="matchConfidence" className="text-center">
-                Confidence
-              </SortableHead>
               <TableHead className="w-10"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paged.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={9}
-                  className="text-center py-8 text-muted-foreground"
-                >
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                   No records found.
                 </TableCell>
               </TableRow>
             ) : (
-              paged.map((record) => (
-                <Fragment key={record.id}>
-                  <TableRow
-                    className={cn(
-                      "cursor-pointer border-l-2 transition-colors",
-                      record.actionStatus === "flagged"
-                        ? "border-l-risk-high bg-risk-high/[0.02]"
-                        : record.actionStatus === "escalated"
-                          ? "border-l-risk-critical bg-risk-critical/[0.02]"
-                          : record.actionStatus === "resolved"
-                            ? "border-l-risk-low bg-risk-low/[0.02]"
-                            : "border-l-transparent",
-                    )}
-                    onClick={() =>
-                      setExpandedRow(
-                        expandedRow === record.id ? null : record.id,
-                      )
-                    }
-                  >
-                    <TableCell className="font-mono text-sm">
-                      <div className="flex items-center gap-2">
-                        <span>{record.invoiceNo}</span>
-                        <div className="flex items-center gap-1">
-                          {record.actionStatus === "flagged" && (
-                            <Flag className="h-3 w-3 text-risk-high" />
-                          )}
-                          {record.actionStatus === "escalated" && (
-                            <AlertTriangle className="h-3 w-3 text-risk-critical" />
-                          )}
-                          {record.actionStatus === "resolved" && (
-                            <CheckCircle2 className="h-3 w-3 text-risk-low" />
-                          )}
-                          {hasNudge(record) && (
-                            <Send className="h-3 w-3 text-primary" />
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {record.invoiceDate}
-                    </TableCell>
-                    <TableCell className="font-medium text-sm max-w-[160px] truncate">
-                      {record.supplierName}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {record.gstin}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {formatCurrency(record.taxableValue)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-medium">
-                      {formatCurrency(record.totalTax)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant={statusBadgeVariant(record.status)}>
-                        {statusLabel(record.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="text-sm font-mono">
-                        {record.matchConfidence}%
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedRow(
-                                expandedRow === record.id ? null : record.id,
-                              );
-                            }}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Details
-                          </DropdownMenuItem>
-
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setNudgeRecord(record);
-                            }}
-                          >
-                            <Send className="mr-2 h-4 w-4" />
-                            Nudge Vendor
-                          </DropdownMenuItem>
-
-                          {record.actionStatus !== "flagged" &&
-                            record.actionStatus !== "escalated" && (
-                              <DropdownMenuItem
-                                disabled={actionLoading === record.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAction(record, "flagged");
-                                }}
-                              >
-                                <Flag className="mr-2 h-4 w-4" />
-                                Flag for Review
-                              </DropdownMenuItem>
-                            )}
-
-                          {record.actionStatus !== "escalated" && (
+              paged.map((invoice) => {
+                const bucket = bucketOf(invoice.status);
+                const tag = reasonTag(invoice);
+                const proposal = proposals[invoice.id];
+                return (
+                  <Fragment key={invoice.id}>
+                    <TableRow
+                      className="cursor-pointer"
+                      onClick={() =>
+                        setExpandedRow(expandedRow === invoice.id ? null : invoice.id)
+                      }
+                    >
+                      <TableCell className="font-mono text-sm">
+                        {invoice.invoice_number}
+                      </TableCell>
+                      <TableCell className="text-sm">{invoice.invoice_date ?? "—"}</TableCell>
+                      <TableCell className="font-medium text-sm max-w-[160px] truncate">
+                        {invoice.vendor_name ?? (
+                          <span className="text-muted-foreground italic">Unknown vendor</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {invoice.vendor_gstin ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">
+                        {formatCurrency(Number(invoice.taxable_value ?? 0))}
+                      </TableCell>
+                      <TableCell className="text-right text-sm font-medium">
+                        {formatCurrency(Number(invoice.total_tax))}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={bucketBadgeVariant(bucket)}>
+                          {STATUS_LABEL[invoice.status]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
                             <DropdownMenuItem
-                              className="text-destructive"
-                              disabled={actionLoading === record.id}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleAction(record, "escalated");
+                                setExpandedRow(expandedRow === invoice.id ? null : invoice.id);
                               }}
                             >
-                              <AlertTriangle className="mr-2 h-4 w-4" />
-                              Escalate
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Details
                             </DropdownMenuItem>
-                          )}
-
-                          {(record.actionStatus === "flagged" ||
-                            record.actionStatus === "escalated") && (
-                            <>
-                              <DropdownMenuSeparator />
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              disabled={!canNudgeVendor(invoice)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setNudgeInvoice(invoice);
+                              }}
+                            >
+                              <Send className="mr-2 h-4 w-4" />
+                              Nudge Vendor
+                            </DropdownMenuItem>
+                            {invoice.status !== "RESOLVED" && (
                               <DropdownMenuItem
-                                disabled={actionLoading === record.id}
+                                disabled={actionLoading === invoice.id}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleAction(record, "resolved");
+                                  handleResolve(invoice);
                                 }}
                               >
                                 <CheckCircle2 className="mr-2 h-4 w-4 text-risk-low" />
                                 Mark Resolved
                               </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                  {expandedRow === record.id && (
-                    <TableRow key={`${record.id}-detail`}>
-                      <TableCell colSpan={9} className="bg-muted/30">
-                        <div className="py-3 px-4 space-y-4">
-                          <div>
-                            <div className="text-sm font-medium">
-                              AI Summary
-                            </div>
-                            <p className="text-sm text-muted-foreground leading-relaxed mt-1">
-                              {record.aiSummary}
-                            </p>
-                          </div>
-
-                          {record.aiSuggestions &&
-                            record.aiSuggestions.length > 0 && (
-                              <details className="group">
-                                <summary className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors list-none [&::-webkit-details-marker]:hidden">
-                                  <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-                                  <Sparkles className="h-3 w-3 text-primary" />
-                                  AI Suggestions ({record.aiSuggestions.length})
-                                </summary>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {record.aiSuggestions.map((suggestion) => (
-                                    <button
-                                      key={suggestion.id}
-                                      title={suggestion.description}
-                                      className={cn(
-                                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors hover:shadow-sm",
-                                        suggestion.action === "auto_correct" &&
-                                          "border-risk-low/30 text-risk-low hover:bg-risk-low/5",
-                                        suggestion.action === "nudge_vendor" &&
-                                          "border-primary/30 text-primary hover:bg-primary/5",
-                                        suggestion.action === "switch_vendor" &&
-                                          "border-risk-high/30 text-risk-high hover:bg-risk-high/5",
-                                        suggestion.action === "accept_risk" &&
-                                          "border-risk-low/30 text-risk-low hover:bg-risk-low/5",
-                                        suggestion.action ===
-                                          "escalate_urgent" &&
-                                          "border-risk-critical/30 text-risk-critical hover:bg-risk-critical/5",
-                                      )}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (
-                                          suggestion.action === "nudge_vendor"
-                                        ) {
-                                          setNudgeRecord(record);
-                                        } else if (
-                                          suggestion.action ===
-                                          "escalate_urgent"
-                                        ) {
-                                          handleAction(record, "escalated");
-                                        } else if (
-                                          suggestion.action === "accept_risk"
-                                        ) {
-                                          handleAction(record, "resolved");
-                                        } else if (
-                                          suggestion.action === "auto_correct"
-                                        ) {
-                                          handleAction(record, "resolved");
-                                        } else if (
-                                          suggestion.action === "switch_vendor"
-                                        ) {
-                                          handleAction(record, "flagged");
-                                        }
-                                      }}
-                                    >
-                                      {suggestionIcon(suggestion.action)}
-                                      {suggestion.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </details>
                             )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                    {expandedRow === invoice.id && (
+                      <TableRow key={`${invoice.id}-detail`}>
+                        <TableCell colSpan={8} className="bg-muted/30">
+                          <div className="py-3 px-4 space-y-4">
+                            <div>
+                              <div className="text-sm font-medium">Reason</div>
+                              <p className="text-sm text-muted-foreground leading-relaxed mt-1">
+                                {invoice.match_reason}
+                              </p>
+                              {tag && (
+                                <Badge variant="secondary" className="mt-2 gap-1">
+                                  {tag}
+                                </Badge>
+                              )}
+                              {invoice.description && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Description: {invoice.description}
+                                </p>
+                              )}
+                            </div>
 
-                          <div className="flex gap-4 text-xs text-muted-foreground">
-                            <span>IGST: {formatCurrency(record.igst)}</span>
-                            <span>CGST: {formatCurrency(record.cgst)}</span>
-                            <span>SGST: {formatCurrency(record.sgst)}</span>
-                          </div>
-
-                          {record.activityLog &&
-                            record.activityLog.length > 1 && (
-                              <div className="border-t pt-3">
-                                <ActivityTimeline
-                                  entries={record.activityLog}
-                                />
+                            {invoice.recoverable_until && (
+                              <div className="flex items-center gap-1.5 text-xs">
+                                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                                {invoice.window_open ? (
+                                  <span>
+                                    Sec 16(4) window open —{" "}
+                                    <span className="font-medium">
+                                      {invoice.days_to_recover} day
+                                      {invoice.days_to_recover === 1 ? "" : "s"}
+                                    </span>{" "}
+                                    left to recover this ITC (by {invoice.recoverable_until})
+                                  </span>
+                                ) : (
+                                  <span className="text-risk-critical font-medium">
+                                    Sec 16(4) window closed ({invoice.recoverable_until}) — this
+                                    ITC can no longer be claimed
+                                  </span>
+                                )}
                               </div>
                             )}
 
-                          <div className="border-t pt-3 flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5 text-xs"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setNudgeRecord(record);
-                              }}
-                            >
-                              <Send className="h-3 w-3" />
-                              Nudge Vendor
-                            </Button>
-                            {record.actionStatus !== "flagged" &&
-                              record.actionStatus !== "escalated" && (
+                            {invoice.counterpart && (
+                              <div className="grid grid-cols-2 gap-4 text-xs border-t pt-3">
+                                <div>
+                                  <div className="font-medium mb-1">Your books</div>
+                                  <div>Invoice: {invoice.invoice_number}</div>
+                                  <div>Tax: {formatCurrency(Number(invoice.total_tax))}</div>
+                                </div>
+                                <div>
+                                  <div className="font-medium mb-1">GSTR-2B</div>
+                                  <div>Invoice: {invoice.counterpart.invoice_number}</div>
+                                  <div>
+                                    Tax: {formatCurrency(Number(invoice.counterpart.total_tax))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {proposal && (
+                              <div className="rounded-lg border bg-background p-3 text-xs space-y-1">
+                                <div className="font-medium flex items-center gap-1.5">
+                                  <ShieldOff className="h-3.5 w-3.5 text-muted-foreground" />
+                                  Recommendation only — never applied automatically
+                                </div>
+                                <p className="text-muted-foreground">{proposal.rationale}</p>
+                              </div>
+                            )}
+
+                            <div className="border-t pt-3 flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5 text-xs"
+                                disabled={!canNudgeVendor(invoice)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setNudgeInvoice(invoice);
+                                }}
+                              >
+                                <Send className="h-3 w-3" />
+                                Nudge Vendor
+                              </Button>
+                              {invoice.status !== "RESOLVED" && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="gap-1.5 text-xs"
-                                  disabled={actionLoading === record.id}
+                                  disabled={actionLoading === invoice.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleAction(record, "flagged");
+                                    handleResolve(invoice);
                                   }}
                                 >
-                                  <Flag className="h-3 w-3" />
-                                  Flag for Review
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Mark Resolved
                                 </Button>
                               )}
-                            {record.actionStatus !== "escalated" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5 text-xs text-destructive"
-                                disabled={actionLoading === record.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAction(record, "escalated");
-                                }}
-                              >
-                                <AlertTriangle className="h-3 w-3" />
-                                Escalate
-                              </Button>
-                            )}
-                            {(record.actionStatus === "flagged" ||
-                              record.actionStatus === "escalated") && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5 text-xs text-risk-low"
-                                disabled={actionLoading === record.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAction(record, "resolved");
-                                }}
-                              >
-                                <CheckCircle2 className="h-3 w-3" />
-                                Resolve
-                              </Button>
-                            )}
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              ))
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -541,8 +390,7 @@ export function RecordTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <p className="text-sm text-muted-foreground">
-            Showing {page * PAGE_SIZE + 1}–
-            {Math.min((page + 1) * PAGE_SIZE, sorted.length)} of{" "}
+            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sorted.length)} of{" "}
             {sorted.length} records
           </p>
           <div className="flex items-center gap-2">
@@ -552,7 +400,7 @@ export function RecordTable({
               onClick={() => setPage(page - 1)}
               disabled={page === 0}
             >
-              <ChevronLeft className="h-4 w-4" />
+              Prev
             </Button>
             <span className="text-sm text-muted-foreground">
               Page {page + 1} of {totalPages}
@@ -563,23 +411,23 @@ export function RecordTable({
               onClick={() => setPage(page + 1)}
               disabled={page >= totalPages - 1}
             >
+              Next
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
       )}
 
-      {nudgeRecord && (
+      {nudgeInvoice && (
         <NudgeVendorModal
-          open={!!nudgeRecord}
+          open={!!nudgeInvoice}
           onOpenChange={(open) => {
-            if (!open) setNudgeRecord(null);
+            if (!open) setNudgeInvoice(null);
           }}
-          record={nudgeRecord}
-          runId={runId}
-          onRecordUpdate={(updated) => {
-            onRecordUpdate(updated);
-            setNudgeRecord(null);
+          invoice={nudgeInvoice}
+          periodId={periodId}
+          onSent={() => {
+            onInvoiceUpdate();
           }}
         />
       )}

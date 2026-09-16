@@ -1,123 +1,182 @@
-export type RiskCategory = "matched" | "low_risk" | "high_risk" | "cannot_file";
+// Mirrors lock-step-be's schemas (lockstep/schemas/*.py) — every field here has a
+// named counterpart there. Nothing in this file is invented on the frontend.
 
-export type ActionStatus = "none" | "flagged" | "escalated" | "resolved";
-export type NudgeChannel = "email" | "whatsapp";
+export type InvoiceMatchStatus =
+  | "PENDING"
+  | "EXACT_MATCH"
+  | "CLERICAL_MISMATCH"
+  | "AMOUNT_MISMATCH"
+  | "MISSING_IN_GSTR2B"
+  | "MISSING_IN_LEDGER"
+  | "DUPLICATE"
+  | "ITC_INELIGIBLE"
+  | "RESOLVED"
+  | "CARRIED_FORWARD";
 
-export interface ActivityEntry {
+export type InvoiceSource = "LEDGER" | "GSTR2B" | "BOTH";
+
+export type ActionType =
+  | "VENDOR_NOTIFIED"
+  | "PAYMENT_HOLD_PROPOSED"
+  | "PAYMENT_HOLD_APPLIED"
+  | "PAYMENT_RELEASED"
+  | "MARKED_RESOLVED"
+  | "IGNORED";
+
+export interface Client {
   id: string;
-  timestamp: string;
-  type: "created" | "flagged" | "escalated" | "resolved" | "nudge_sent";
-  description: string;
-  actor: string;
-  channel?: NudgeChannel;
-}
-
-export type SuggestionAction = "auto_correct" | "nudge_vendor" | "switch_vendor" | "accept_risk" | "escalate_urgent";
-
-export interface AiSuggestion {
-  id: string;
-  action: SuggestionAction;
-  label: string;
-  description: string;
-  confidence: number;
-}
-
-export interface PurchaseRecord {
-  date: string;
-  particulars: string;
-  supplier: string;
-  voucherType: string;
-  voucherNo: string;
-  voucherRefNo: string;
-  voucherRefDate: string;
-  narration: string;
-  grossTotal: number;
-  igstInput?: number;
-  cgstInput?: number;
-  sgstInput?: number;
-}
-
-export interface GSTR2BRecord {
+  legal_name: string;
   gstin: string;
-  tradeName: string;
-  invoiceNo: string;
-  invoiceType: string;
-  invoiceDate: string;
-  invoiceValue: number;
-  placeOfSupply: string;
-  reverseCharge: string;
-  taxableValue: number;
-  igst: number;
-  cgst: number;
-  sgst: number;
-  cess: number;
-  filingPeriod: string;
-  filingDate: string;
-  itcAvailability: string;
-  reason: string;
-  applicableTaxRate: string;
-  source: string;
-  irn: string;
-  irnDate: string;
 }
 
-export interface ReconciledRecord {
+export interface Period {
   id: string;
-  invoiceNo: string;
-  invoiceDate: string;
-  supplierName: string;
-  gstin: string;
-  taxableValue: number;
-  igst: number;
-  cgst: number;
-  sgst: number;
-  totalTax: number;
-  status: RiskCategory;
-  matchConfidence: number;
-  aiSummary: string;
-  aiSuggestions: AiSuggestion[];
-  actionStatus: ActionStatus;
-  activityLog: ActivityEntry[];
-  purchaseRecord?: PurchaseRecord;
-  gstr2bRecord?: GSTR2BRecord;
+  client_id: string;
+  tax_period: string; // MMYYYY
+  cutoff_date: string;
+  gstr2b_date: string;
+  filing_due: string;
+  created_at: string;
 }
 
-export interface ReconciliationRun {
+export interface Check {
   id: string;
-  createdAt: string;
-  purchaseFileName: string;
-  gstr2bFileName: string;
-  totalRecords: number;
-  matchedCount: number;
-  lowRiskCount: number;
-  highRiskCount: number;
-  cannotFileCount: number;
-  totalTaxableValue: number;
-  totalTaxAtRisk: number;
-  records: ReconciledRecord[];
+  period_id: string;
+  status: "PROCESSING" | "COMPLETED" | "FAILED";
+  rows_parsed: number | null;
+  error_message: string | null;
+  column_mapping: Record<string, unknown> | null;
+  created_at: string;
 }
 
-export interface ReconciliationRunSummary {
+export interface Headline {
+  period_id: string;
+  tax_period: string;
+  cutoff_date: string;
+  days_to_cutoff: number;
+  window_open: boolean;
+  amount_at_risk: string;
+  invoices_at_risk: number;
+  vendors_not_filed: number;
+  checks_run: number;
+  status_counts: Record<InvoiceMatchStatus, number>;
+}
+
+export interface InvoiceSide {
+  invoice_number: string;
+  invoice_date: string | null;
+  taxable_value: string | null;
+  igst: string;
+  cgst: string;
+  sgst: string;
+  cess: string;
+  total_tax: string;
+  raw_data: Record<string, unknown>;
+}
+
+export interface Invoice {
   id: string;
-  createdAt: string;
-  purchaseFileName: string;
-  gstr2bFileName: string;
-  totalRecords: number;
-  matchedCount: number;
-  lowRiskCount: number;
-  highRiskCount: number;
-  cannotFileCount: number;
-  totalTaxableValue: number;
-  totalTaxAtRisk: number;
+  period_id: string;
+  check_id: string;
+  vendor_id: string | null;
+  vendor_gstin: string | null;
+  vendor_name: string | null;
+  source: InvoiceSource;
+  status: InvoiceMatchStatus;
+  match_reason: string | null;
+  carried_from_period: string | null;
+
+  invoice_number: string;
+  invoice_date: string | null;
+  taxable_value: string | null;
+  igst: string;
+  cgst: string;
+  sgst: string;
+  cess: string;
+  total_tax: string;
+
+  itc_available: boolean | null;
+  itc_reason: string | null;
+  is_reverse_charge: boolean;
+  supplier_filed_at: string | null;
+  description: string | null;
+
+  recoverable_until: string | null;
+  days_to_recover: number | null;
+  window_open: boolean | null;
+
+  counterpart: InvoiceSide | null;
+  created_at: string;
 }
 
-export interface Vendor {
+export interface VendorRisk {
+  vendor_id: string;
+  name: string;
+  gstin: string | null;
+  gstin_verified: boolean;
+  contact_email: string | null;
+  periods_observed: number;
+  on_time_rate: number | null;
+  avg_days_past_cutoff: number | null;
+  typical_filing_day: number | null;
+  filed_this_period: boolean;
+  predicted_late: boolean;
+  missing_invoice_count: number;
+  current_exposure: string;
+  risk_band: "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
+}
+
+export interface FilingHistoryEntry {
+  tax_period: string;
+  gstr1_filed: boolean | null;
+  gstr1_filed_at: string | null;
+  days_past_cutoff: number | null;
+  invoice_count: number | null;
+}
+
+export interface VendorDetail {
   id: string;
   name: string;
-  gstin: string;
-  riskScore: number;
-  riskTier: "green" | "amber" | "red";
-  lastFilingDate: string;
-  totalInvoices: number;
-  missedFilings: number;
+  gstin: string | null;
+  gstin_verified: boolean;
+  contact_email: string | null;
+  contact_phone: string | null;
+  risk: VendorRisk | null;
+  filing_history: FilingHistoryEntry[];
+  ai_summary: string | null;
 }
+
+export interface VendorEmailDraft {
+  to: string | null;
+  subject: string;
+  body: string;
+  invoice_numbers: string[];
+  can_send: boolean;
+  reason: string | null;
+}
+
+export interface ActionProposal {
+  invoice_id: string;
+  amount_at_risk: string;
+  proposed_action: ActionType;
+  requires_approval: boolean;
+  rationale: string;
+}
+
+export interface InvoiceAction {
+  id: string;
+  invoice_id: string;
+  action: ActionType;
+  channel: string | null;
+  auto_proposed: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  amount_at_risk: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+}
+
+// --- Frontend-only derived concepts (not backend fields) ------------------------
+// The 3-bucket view the product spec asks for: Safe / Moderate Risk / High Risk.
+// Computed client-side from `status` — see src/lib/risk.ts.
+export type RiskBucket = "safe" | "moderate" | "high";

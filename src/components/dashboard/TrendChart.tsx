@@ -1,9 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   LineChart,
   Line,
@@ -14,18 +9,47 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import type { Headline, Period } from "@/types";
+import { matchRatePercent } from "@/lib/risk";
 
-const TREND_DATA = [
-  { month: "Mar '24", matchRate: 62, itcAtRisk: 8.4, vendorCompliance: 54 },
-  { month: "Apr '24", matchRate: 68, itcAtRisk: 6.9, vendorCompliance: 58 },
-  { month: "May '24", matchRate: 71, itcAtRisk: 5.8, vendorCompliance: 63 },
-  { month: "Jun '24", matchRate: 75, itcAtRisk: 4.2, vendorCompliance: 70 },
-  { month: "Jul '24", matchRate: 82, itcAtRisk: 3.1, vendorCompliance: 76 },
-  { month: "Aug '24", matchRate: 88, itcAtRisk: 2.3, vendorCompliance: 81 },
-  { month: "Sep '24", matchRate: 94, itcAtRisk: 1.1, vendorCompliance: 89 },
-];
+interface TrendChartProps {
+  headlines: { period: Period; headline: Headline }[];
+}
 
-export function TrendChart() {
+function formatPeriodLabel(taxPeriod: string): string {
+  const month = Number(taxPeriod.slice(0, 2));
+  const year = taxPeriod.slice(2);
+  const names = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+  return `${names[month - 1]} '${year.slice(2)}`;
+}
+
+export function TrendChart({ headlines }: TrendChartProps) {
+  const data = [...headlines]
+    .sort((a, b) => a.period.tax_period.localeCompare(b.period.tax_period))
+    .map((h) => ({
+      period: formatPeriodLabel(h.period.tax_period),
+      matchRate: matchRatePercent(h.headline),
+      itcAtRiskLakh: Number(h.headline.amount_at_risk) / 100_000,
+    }));
+
+  if (data.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Compliance Trends</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            Run a reconciliation to see trends here.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -33,21 +57,10 @@ export function TrendChart() {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={TREND_DATA}>
+          <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-            <XAxis
-              dataKey="month"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-              domain={[0, 100]}
-              tickFormatter={(v) => `${v}%`}
-            />
+            <XAxis dataKey="period" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} domain={[0, 100]} />
             <Tooltip
               contentStyle={{
                 borderRadius: "8px",
@@ -55,16 +68,13 @@ export function TrendChart() {
                 background: "hsl(var(--card))",
                 fontSize: "12px",
               }}
-              formatter={(value: number, name: string) => {
-                if (name === "ITC at Risk (₹L)") return [`₹${value}L`, name];
-                return [`${value}%`, name];
+              formatter={(value, name) => {
+                const num = Number(value);
+                if (name === "ITC at Risk (₹L)") return [`₹${num.toFixed(1)}L`, name];
+                return [`${num}%`, name];
               }}
             />
-            <Legend
-              iconType="circle"
-              iconSize={8}
-              wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }}
-            />
+            <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
             <Line
               type="monotone"
               dataKey="matchRate"
@@ -76,17 +86,7 @@ export function TrendChart() {
             />
             <Line
               type="monotone"
-              dataKey="vendorCompliance"
-              stroke="hsl(221, 83%, 53%)"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
-              name="Vendor Compliance"
-              strokeDasharray="5 5"
-            />
-            <Line
-              type="monotone"
-              dataKey="itcAtRisk"
+              dataKey="itcAtRiskLakh"
               stroke="hsl(0, 84%, 60%)"
               strokeWidth={2}
               dot={{ r: 3 }}
@@ -95,9 +95,6 @@ export function TrendChart() {
             />
           </LineChart>
         </ResponsiveContainer>
-        <p className="text-xs text-muted-foreground mt-2 text-center">
-          Match rate improved 62% → 94% since Lockstep adoption
-        </p>
       </CardContent>
     </Card>
   );

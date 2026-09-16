@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,112 +10,75 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { sendVendorNudge } from "@/lib/api";
-import type { ReconciledRecord, NudgeChannel } from "@/types";
-import {
-  Mail,
-  MessageCircle,
-  Copy,
-  Send,
-  Loader2,
-  CheckCircle2,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { fetchVendorEmailDraft, createInvoiceAction } from "@/lib/api";
+import type { Invoice, VendorEmailDraft } from "@/types";
+import { Mail, Copy, Send, Loader2, CheckCircle2, ShieldOff } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
 interface NudgeVendorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  record: ReconciledRecord;
-  runId: string;
-  onRecordUpdate: (updated: ReconciledRecord) => void;
-}
-
-function buildEmailSubject(record: ReconciledRecord): string {
-  return `Action Required — Invoice ${record.invoiceNo} missing from GSTR-1`;
-}
-
-function buildEmailBody(record: ReconciledRecord): string {
-  return `Dear ${record.supplierName},
-
-Our records indicate that Invoice ${record.invoiceNo} dated ${record.invoiceDate} (Taxable Value: ${formatCurrency(record.taxableValue)}, Tax: ${formatCurrency(record.totalTax)}) has not been reported in your GSTR-1 filing for the relevant period.
-
-This discrepancy prevents us from claiming Input Tax Credit (ITC) of ${formatCurrency(record.totalTax)} under GST regulations.
-
-We request you to please:
-1. Verify the invoice details in your records
-2. File/amend your GSTR-1 to include this invoice
-3. Confirm once the filing is updated
-
-Please note that as per Section 16(2) of the CGST Act, ITC can only be claimed when the supplier has filed their return. Continued non-compliance may result in payment holds as per our vendor compliance policy.
-
-We would appreciate your prompt action on this matter within 7 business days.
-
-Regards,
-Accounts & Compliance Team
-Acme Trading Co`;
-}
-
-function buildWhatsAppMessage(record: ReconciledRecord): string {
-  return `Hi ${record.supplierName},
-
-This is regarding Invoice *${record.invoiceNo}* dated ${record.invoiceDate} (Tax: ${formatCurrency(record.totalTax)}).
-
-This invoice is *not appearing in your GSTR-1* filing, which blocks our ITC claim.
-
-Could you please check and update your GSTR-1 at the earliest? We need this resolved within 7 days to process your payment.
-
-Thanks,
-Acme Trading Co — Finance Team`;
+  invoice: Invoice;
+  periodId: string;
+  onSent: () => void;
 }
 
 export function NudgeVendorModal({
   open,
   onOpenChange,
-  record,
-  runId,
-  onRecordUpdate,
+  invoice,
+  periodId,
+  onSent,
 }: NudgeVendorModalProps) {
-  const [channel, setChannel] = useState<NudgeChannel>("email");
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState<VendorEmailDraft | null>(null);
+  const [body, setBody] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const defaultEmail = useMemo(() => buildEmailBody(record), [record]);
-  const defaultWhatsApp = useMemo(() => buildWhatsAppMessage(record), [record]);
-  const emailSubject = useMemo(() => buildEmailSubject(record), [record]);
-
-  const [emailBody, setEmailBody] = useState(defaultEmail);
-  const [whatsAppBody, setWhatsAppBody] = useState(defaultWhatsApp);
-
-  const currentMessage = channel === "email" ? emailBody : whatsAppBody;
+  useEffect(() => {
+    if (!open || !invoice.vendor_id) return;
+    setLoading(true);
+    setError(null);
+    setSent(false);
+    fetchVendorEmailDraft(invoice.vendor_id, periodId)
+      .then((d) => {
+        setDraft(d);
+        setBody(d.body);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load draft"))
+      .finally(() => setLoading(false));
+  }, [open, invoice.vendor_id, periodId]);
 
   const handleCopy = async () => {
-    const text =
-      channel === "email"
-        ? `Subject: ${emailSubject}\n\n${emailBody}`
-        : whatsAppBody;
+    const text = draft ? `Subject: ${draft.subject}\n\n${body}` : body;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleSend = async () => {
+    if (!draft) return;
     setIsSending(true);
     try {
-      const updated = await sendVendorNudge(
-        runId,
-        record.id,
-        channel,
-        currentMessage,
-      );
-      onRecordUpdate(updated);
-      onOpenChange(false);
+      await createInvoiceAction(invoice.id, "VENDOR_NOTIFIED", "email", {
+        subject: draft.subject,
+        body,
+        to: draft.to,
+      });
+      setSent(true);
+      onSent();
     } catch (err) {
-      console.error("Failed to send nudge:", err);
+      setError(err instanceof Error ? err.message : "Failed to record the notification");
     } finally {
       setIsSending(false);
     }
   };
+
+  // No vendor record at all — never even worth a network call.
+  const vendorInfoMissing = !invoice.vendor_id;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -123,137 +86,138 @@ export function NudgeVendorModal({
         <DialogHeader>
           <DialogTitle>Nudge Vendor</DialogTitle>
           <DialogDescription>
-            Send a compliance reminder to{" "}
-            <span className="font-medium text-foreground">
-              {record.supplierName}
-            </span>{" "}
-            about Invoice {record.invoiceNo}
+            Compliance reminder about Invoice {invoice.invoice_number}
+            {invoice.vendor_name ? ` — ${invoice.vendor_name}` : ""}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Invoice</span>
-              <span className="font-mono font-medium">{record.invoiceNo}</span>
+        {vendorInfoMissing ? (
+          <div className="rounded-lg border border-dashed p-6 text-center space-y-2">
+            <ShieldOff className="h-8 w-8 mx-auto text-muted-foreground" />
+            <p className="text-sm font-medium">Vendor info for reminder not present</p>
+            <p className="text-xs text-muted-foreground">
+              This invoice has no GSTIN and the vendor name couldn't be matched to
+              anyone in your records — there's nowhere to send a reminder to.
+            </p>
+          </div>
+        ) : loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : draft && !draft.can_send ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-dashed p-6 text-center space-y-2">
+              <ShieldOff className="h-8 w-8 mx-auto text-muted-foreground" />
+              <p className="text-sm font-medium">Vendor info for reminder not present</p>
+              <p className="text-xs text-muted-foreground">{draft.reason}</p>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Date</span>
-              <span>{record.invoiceDate}</span>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Draft (for reference — copy and send manually if you have another
+                way to reach them)
+              </label>
+              <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={8} />
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tax at Risk</span>
-              <span className="font-medium text-risk-critical">
-                {formatCurrency(record.totalTax)}
-              </span>
-            </div>
-            {record.gstin && (
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={handleCopy} className="gap-1.5">
+                {copied ? (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 text-risk-low" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy to Clipboard
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : draft ? (
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg bg-muted/50 p-3 text-xs space-y-1">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">GSTIN</span>
-                <span className="font-mono">{record.gstin}</span>
+                <span className="text-muted-foreground">Invoice</span>
+                <span className="font-mono font-medium">{invoice.invoice_number}</span>
               </div>
-            )}
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block">
-              Channel
-            </label>
-            <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
-              <button
-                onClick={() => setChannel("email")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  channel === "email"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Mail className="h-3.5 w-3.5" />
-                Email
-              </button>
-              <button
-                onClick={() => setChannel("whatsapp")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  channel === "whatsapp"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <MessageCircle className="h-3.5 w-3.5" />
-                WhatsApp
-              </button>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Tax at Risk</span>
+                <span className="font-medium text-risk-critical">
+                  {formatCurrency(Number(invoice.total_tax))}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">To</span>
+                <span className="font-mono flex items-center gap-1">
+                  <Mail className="h-3 w-3" /> {draft.to}
+                </span>
+              </div>
             </div>
-          </div>
 
-          {channel === "email" && (
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">
                 Subject
               </label>
-              <Input value={emailSubject} readOnly className="text-sm bg-muted/30" />
+              <Input value={draft.subject} readOnly className="text-sm bg-muted/30" />
             </div>
-          )}
 
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              Message
-            </label>
-            <Textarea
-              value={channel === "email" ? emailBody : whatsAppBody}
-              onChange={(e) =>
-                channel === "email"
-                  ? setEmailBody(e.target.value)
-                  : setWhatsAppBody(e.target.value)
-              }
-              rows={channel === "email" ? 12 : 8}
-              className="text-sm font-mono leading-relaxed"
-            />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              You can edit the message before sending or copying.
-            </p>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Message
+              </label>
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={10}
+                className="text-sm font-mono leading-relaxed"
+              />
+            </div>
+
+            {sent && (
+              <div className="rounded-lg border border-risk-low/40 bg-risk-low/10 p-3 text-sm text-risk-low flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Logged as sent. This never blocks or holds payment — it's a record
+                of the notification only.
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" size="sm" onClick={handleCopy} className="gap-1.5">
+                {copied ? (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 text-risk-low" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy to Clipboard
+                  </>
+                )}
+              </Button>
+              <Button size="sm" onClick={handleSend} disabled={isSending || sent} className="gap-1.5">
+                {isSending ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-3.5 w-3.5" />
+                    Send Email
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
           </div>
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCopy}
-            className="gap-1.5"
-          >
-            {copied ? (
-              <>
-                <CheckCircle2 className="h-3.5 w-3.5 text-risk-low" />
-                Copied!
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5" />
-                Copy to Clipboard
-              </>
-            )}
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSend}
-            disabled={isSending}
-            className="gap-1.5"
-          >
-            {isSending ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Sending...
-              </>
-            ) : (
-              <>
-                <Send className="h-3.5 w-3.5" />
-                Send {channel === "email" ? "Email" : "WhatsApp"}
-              </>
-            )}
-          </Button>
-        </DialogFooter>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

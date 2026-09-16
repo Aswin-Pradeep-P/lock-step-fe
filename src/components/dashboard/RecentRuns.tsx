@@ -1,10 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -16,11 +11,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
-import type { ReconciliationRunSummary } from "@/types";
+import type { Check, Invoice, Period } from "@/types";
+import { bucketOf } from "@/lib/risk";
 import { FileText } from "lucide-react";
 
+export interface RunRow {
+  period: Period;
+  check: Check;
+  invoices: Invoice[];
+}
+
 interface RecentRunsProps {
-  runs: ReconciliationRunSummary[];
+  runs: RunRow[];
 }
 
 export function RecentRuns({ runs }: RecentRunsProps) {
@@ -36,9 +38,7 @@ export function RecentRuns({ runs }: RecentRunsProps) {
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
             <FileText className="h-10 w-10 mb-3 opacity-50" />
             <p className="text-sm">No reconciliation runs yet.</p>
-            <p className="text-xs mt-1">
-              Start a new reconciliation to see results here.
-            </p>
+            <p className="text-xs mt-1">Start a new reconciliation to see results here.</p>
           </div>
         </CardContent>
       </Card>
@@ -55,57 +55,38 @@ export function RecentRuns({ runs }: RecentRunsProps) {
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
-              <TableHead>Files</TableHead>
+              <TableHead>Period</TableHead>
               <TableHead className="text-center">Records</TableHead>
-              <TableHead className="text-center">Matched</TableHead>
               <TableHead className="text-center">At Risk</TableHead>
               <TableHead className="text-right">Tax at Risk</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {runs.map((run) => {
-              const matchPct = run.totalRecords > 0
-                ? Math.round(
-                    ((run.matchedCount + run.lowRiskCount) / run.totalRecords) * 100
-                  )
-                : 0;
-              const atRisk = run.highRiskCount + run.cannotFileCount;
+            {runs.map(({ period, check, invoices }) => {
+              const atRiskRows = invoices.filter((i) => bucketOf(i.status) === "high");
+              const taxAtRisk = atRiskRows.reduce((sum, i) => sum + Number(i.total_tax), 0);
               return (
                 <TableRow
-                  key={run.id}
+                  key={check.id}
                   className="cursor-pointer"
-                  onClick={() => navigate(`/reconcile/${run.id}`)}
+                  onClick={() => navigate(`/reconcile/${period.id}/${check.id}`)}
                 >
                   <TableCell className="font-medium">
-                    {format(new Date(run.createdAt), "dd MMM yyyy, h:mm a")}
+                    {format(new Date(check.created_at), "dd MMM yyyy, h:mm a")}
                   </TableCell>
-                  <TableCell>
-                    <div className="text-xs">
-                      <div className="truncate max-w-[180px]">
-                        {run.purchaseFileName}
-                      </div>
-                      <div className="truncate max-w-[180px] text-muted-foreground">
-                        {run.gstr2bFileName}
-                      </div>
-                    </div>
+                  <TableCell className="text-xs font-mono">
+                    {period.tax_period.slice(0, 2)}/{period.tax_period.slice(2)}
                   </TableCell>
+                  <TableCell className="text-center">{invoices.length}</TableCell>
                   <TableCell className="text-center">
-                    {run.totalRecords}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant={matchPct >= 80 ? "success" : "warning"}>
-                      {matchPct}%
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {atRisk > 0 ? (
-                      <Badge variant="danger">{atRisk}</Badge>
+                    {atRiskRows.length > 0 ? (
+                      <Badge variant="danger">{atRiskRows.length}</Badge>
                     ) : (
                       <Badge variant="success">0</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {formatCurrency(run.totalTaxAtRisk)}
+                    {formatCurrency(taxAtRisk)}
                   </TableCell>
                 </TableRow>
               );

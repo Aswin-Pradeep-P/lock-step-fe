@@ -3,6 +3,8 @@ import { Layout } from "@/components/layout/Layout";
 import Dashboard from "@/pages/Dashboard";
 import NewReconciliation from "@/pages/NewReconciliation";
 import ReconciliationResults from "@/pages/ReconciliationResults";
+import Login from "@/pages/Login";
+import { isAuthenticated } from "@/lib/auth";
 import { useEffect } from "react";
 
 function ScrollToTop() {
@@ -13,15 +15,30 @@ function ScrollToTop() {
   return null;
 }
 
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  if (!isAuthenticated()) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
       <Routes>
-        <Route element={<Layout />}>
+        <Route path="/login" element={<Login />} />
+        <Route
+          element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }
+        >
           <Route path="/" element={<Dashboard />} />
           <Route path="/reconcile" element={<NewReconciliation />} />
-          <Route path="/reconcile/:runId" element={<ReconciliationResults />} />
+          <Route path="/reconcile/:periodId" element={<ReconciliationResults />} />
+          <Route path="/reconcile/:periodId/:checkId" element={<ReconciliationResults />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

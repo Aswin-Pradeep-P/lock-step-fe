@@ -1,52 +1,32 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import {
-  Activity,
-  TrendingUp,
-  AlertTriangle,
-  ShieldAlert,
-  HandCoins,
-} from "lucide-react";
-import type { ReconciliationRunSummary, Vendor } from "@/types";
+import { Activity, TrendingUp, AlertTriangle, HandCoins } from "lucide-react";
+import type { Headline, Period, VendorRisk } from "@/types";
+import { matchRatePercent } from "@/lib/risk";
 
 interface StatsCardsProps {
-  runs: ReconciliationRunSummary[];
-  vendors: Vendor[];
+  headlines: { period: Period; headline: Headline }[];
+  vendors: VendorRisk[];
 }
 
-export function StatsCards({ runs, vendors }: StatsCardsProps) {
-  const totalRuns = runs.length;
+export function StatsCards({ headlines, vendors }: StatsCardsProps) {
+  const totalRuns = headlines.reduce((sum, h) => sum + h.headline.checks_run, 0);
   const avgMatchRate =
-    runs.length > 0
+    headlines.length > 0
       ? Math.round(
-          runs.reduce(
-            (acc, r) =>
-              acc +
-              (r.totalRecords > 0
-                ? ((r.matchedCount + r.lowRiskCount) / r.totalRecords) * 100
-                : 0),
-            0
-          ) / runs.length
+          headlines.reduce((sum, h) => sum + matchRatePercent(h.headline), 0) / headlines.length,
         )
       : 0;
-  const vendorsAtRisk = vendors.filter((v) => v.riskTier === "red").length;
-  const totalTaxAtRisk = runs.reduce((acc, r) => acc + r.totalTaxAtRisk, 0);
-  const recordsNeedingReview = runs.reduce(
-    (acc, r) => acc + r.highRiskCount + r.cannotFileCount,
-    0,
-  );
+  const totalAtRisk = headlines.reduce((sum, h) => sum + Number(h.headline.amount_at_risk), 0);
+  const invoicesAtRisk = headlines.reduce((sum, h) => sum + h.headline.invoices_at_risk, 0);
+  const vendorsAtRisk = vendors.filter((v) => v.risk_band === "HIGH").length;
 
   const stats = [
     {
       title: "Total Runs",
       value: formatNumber(totalRuns),
       icon: Activity,
-      description: "Reconciliation runs completed",
+      description: "Reconciliation checks completed",
       color: "text-primary",
       bg: "bg-primary/10",
     },
@@ -54,15 +34,15 @@ export function StatsCards({ runs, vendors }: StatsCardsProps) {
       title: "Avg Match Rate",
       value: `${avgMatchRate}%`,
       icon: TrendingUp,
-      description: "Across all reconciliation runs",
+      description: "Across all periods",
       color: "text-risk-low",
       bg: "bg-risk-low/10",
     },
     {
       title: "Payments at Risk",
-      value: formatNumber(recordsNeedingReview),
+      value: formatNumber(invoicesAtRisk),
       icon: HandCoins,
-      description: formatCurrency(totalTaxAtRisk) + " in ITC needs review",
+      description: `${formatCurrency(totalAtRisk)} in ITC needs review`,
       color: "text-risk-high",
       bg: "bg-risk-high/10",
     },
@@ -70,7 +50,7 @@ export function StatsCards({ runs, vendors }: StatsCardsProps) {
       title: "Vendors At Risk",
       value: formatNumber(vendorsAtRisk),
       icon: AlertTriangle,
-      description: "Non-compliant — nudge or escalate",
+      description: "High risk band — nudge or escalate",
       color: "text-risk-critical",
       bg: "bg-risk-critical/10",
     },
@@ -90,9 +70,7 @@ export function StatsCards({ runs, vendors }: StatsCardsProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stat.value}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stat.description}
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">{stat.description}</p>
           </CardContent>
         </Card>
       ))}

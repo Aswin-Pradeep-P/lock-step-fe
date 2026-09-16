@@ -7,51 +7,61 @@ import { DownloadButton } from "@/components/results/DownloadButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { fetchRun } from "@/lib/api";
-import { statusLabel } from "@/lib/export";
-import type { ReconciliationRun, ReconciledRecord, RiskCategory } from "@/types";
-import { Loader2, Search, X, ArrowLeft } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { fetchHeadline, fetchInvoices, fetchVendorDetail } from "@/lib/api";
+import { BUCKET_LABEL, bucketOf } from "@/lib/risk";
+import type { Headline, Invoice, RiskBucket, VendorDetail } from "@/types";
+import { Loader2, Search, X, ArrowLeft, Sparkles } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 
 export default function ReconciliationResults() {
-  const { runId } = useParams<{ runId: string }>();
+  const { periodId, checkId } = useParams<{ periodId: string; checkId?: string }>();
   const navigate = useNavigate();
-  const [run, setRun] = useState<ReconciliationRun | null>(null);
+  const [headline, setHeadline] = useState<Headline | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [vendorSummaries, setVendorSummaries] = useState<VendorDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<RiskCategory | null>(null);
+  const [activeFilter, setActiveFilter] = useState<RiskBucket | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    async function loadRun() {
-      if (!runId) return;
-      try {
-        const data = await fetchRun(runId);
-        setRun(data);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load reconciliation"
-        );
-      } finally {
-        setLoading(false);
-      }
+  const load = useCallback(async () => {
+    if (!periodId) return;
+    try {
+      const [headlineData, invoiceData] = await Promise.all([
+        fetchHeadline(periodId),
+        fetchInvoices(periodId, { checkId }),
+      ]);
+      setHeadline(headlineData);
+      setInvoices(invoiceData);
+
+      const affectedVendorIds = [
+        ...new Set(
+          invoiceData
+            .filter((i) => bucketOf(i.status) !== "safe" && i.vendor_id)
+            .map((i) => i.vendor_id as string),
+        ),
+      ].slice(0, 10); // one AI call per vendor server-side — keep this bounded
+      const summaries = await Promise.all(
+        affectedVendorIds.map((id) =>
+          fetchVendorDetail(id, { periodId, includeSummary: true }).catch(() => null),
+        ),
+      );
+      setVendorSummaries(summaries.filter((s): s is VendorDetail => s !== null));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load reconciliation");
+    } finally {
+      setLoading(false);
     }
-    loadRun();
-  }, [runId]);
+  }, [periodId, checkId]);
 
-  const handleFilterToggle = (category: RiskCategory) => {
-    setActiveFilter(activeFilter === category ? null : category);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleFilterToggle = (bucket: RiskBucket) => {
+    setActiveFilter(activeFilter === bucket ? null : bucket);
   };
-
-  const handleRecordUpdate = useCallback(
-    (updated: ReconciledRecord) => {
-      if (!run) return;
-      setRun({
-        ...run,
-        records: run.records.map((r) => (r.id === updated.id ? updated : r)),
-      });
-    },
-    [run],
-  );
 
   if (loading) {
     return (
@@ -61,12 +71,12 @@ export default function ReconciliationResults() {
     );
   }
 
-  if (error || !run) {
+  if (error || !headline) {
     return (
       <div>
         <Header title="Reconciliation Results" />
         <div className="flex flex-col items-center justify-center p-12">
-          <p className="text-destructive mb-4">{error || "Run not found."}</p>
+          <p className="text-destructive mb-4">{error || "Period not found."}</p>
           <Button variant="outline" onClick={() => navigate("/")}>
             Back to Dashboard
           </Button>
@@ -76,18 +86,14 @@ export default function ReconciliationResults() {
   }
 
   const filteredCount = (() => {
-    let result = run.records;
-    if (activeFilter) {
-      result = result.filter((r) => r.status === activeFilter);
-    }
+    let result = invoices;
+    if (activeFilter) result = result.filter((i) => bucketOf(i.status) === activeFilter);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (r) =>
-          r.invoiceNo.toLowerCase().includes(q) ||
-          r.supplierName.toLowerCase().includes(q) ||
-          r.gstin.toLowerCase().includes(q) ||
-          r.aiSummary.toLowerCase().includes(q)
+      result = result.filter((i) =>
+        `${i.invoice_number} ${i.vendor_name ?? ""} ${i.vendor_gstin ?? ""}`
+          .toLowerCase()
+          .includes(q),
       );
     }
     return result.length;
@@ -96,30 +102,45 @@ export default function ReconciliationResults() {
   return (
     <div>
       <Header title="Reconciliation Results">
-        <DownloadButton
-          run={run}
-          filter={activeFilter}
-        />
+        <DownloadButton periodId={periodId!} />
       </Header>
 
       <div className="p-6 lg:p-8 space-y-6">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate("/")}
-            className="gap-1"
-          >
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1">
             <ArrowLeft className="h-4 w-4" />
             Dashboard
           </Button>
           <div className="text-sm text-muted-foreground">
-            {run.purchaseFileName} vs {run.gstr2bFileName}
+            Tax period {headline.tax_period.slice(0, 2)}/{headline.tax_period.slice(2)} ·{" "}
+            {headline.window_open
+              ? `${headline.days_to_cutoff} days to the 13th cutoff`
+              : "13th cutoff has passed for this period"}{" "}
+            · {headline.checks_run} check{headline.checks_run === 1 ? "" : "s"} run
           </div>
         </div>
 
+        <Card>
+          <CardContent className="p-5 flex flex-wrap items-center gap-x-8 gap-y-2">
+            <div>
+              <div className="text-xs text-muted-foreground">ITC at risk</div>
+              <div className="text-xl font-bold text-risk-critical">
+                {formatCurrency(Number(headline.amount_at_risk))}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Invoices at risk</div>
+              <div className="text-xl font-bold">{headline.invoices_at_risk}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Vendors not filed</div>
+              <div className="text-xl font-bold">{headline.vendors_not_filed}</div>
+            </div>
+          </CardContent>
+        </Card>
+
         <SummaryCards
-          run={run}
+          invoices={invoices}
           activeFilter={activeFilter}
           onFilterToggle={handleFilterToggle}
         />
@@ -128,7 +149,7 @@ export default function ReconciliationResults() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search invoices, suppliers, GSTIN..."
+              placeholder="Search invoices, vendors, GSTIN..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -136,27 +157,42 @@ export default function ReconciliationResults() {
           </div>
 
           {activeFilter && (
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="gap-1 pr-1">
-                Showing: {statusLabel(activeFilter)} — {filteredCount} records
-                <button
-                  onClick={() => setActiveFilter(null)}
-                  className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            </div>
+            <Badge variant="secondary" className="gap-1 pr-1">
+              Showing: {BUCKET_LABEL[activeFilter]} — {filteredCount} records
+              <button
+                onClick={() => setActiveFilter(null)}
+                className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
           )}
         </div>
 
         <RecordTable
-          records={run.records}
+          invoices={invoices}
           filter={activeFilter}
           searchQuery={searchQuery}
-          runId={run.id}
-          onRecordUpdate={handleRecordUpdate}
+          periodId={periodId!}
+          onInvoiceUpdate={load}
         />
+
+        {vendorSummaries.length > 0 && (
+          <Card>
+            <CardContent className="p-5 space-y-4">
+              <div className="flex items-center gap-1.5 text-sm font-medium">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Vendor summaries
+              </div>
+              {vendorSummaries.map((v) => (
+                <div key={v.id} className="border-t pt-3 first:border-t-0 first:pt-0">
+                  <div className="text-sm font-medium">{v.name}</div>
+                  <p className="text-sm text-muted-foreground mt-1">{v.ai_summary}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

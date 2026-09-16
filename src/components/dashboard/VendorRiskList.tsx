@@ -1,9 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -13,37 +8,44 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { Vendor } from "@/types";
-import { Users } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
+import type { VendorRisk } from "@/types";
+import { Users, ShieldQuestion } from "lucide-react";
 
 interface VendorRiskListProps {
-  vendors: Vendor[];
+  vendors: VendorRisk[];
 }
 
-function riskBadgeVariant(tier: Vendor["riskTier"]) {
-  switch (tier) {
-    case "green":
+function riskBadgeVariant(band: VendorRisk["risk_band"]) {
+  switch (band) {
+    case "LOW":
       return "success" as const;
-    case "amber":
+    case "MEDIUM":
       return "warning" as const;
-    case "red":
+    case "HIGH":
       return "danger" as const;
+    case "UNKNOWN":
+      return "secondary" as const;
   }
 }
 
-function riskTierLabel(tier: Vendor["riskTier"]) {
-  switch (tier) {
-    case "green":
-      return "Compliant";
-    case "amber":
-      return "Late Filer";
-    case "red":
-      return "Non-Compliant";
+function riskLabel(band: VendorRisk["risk_band"]) {
+  switch (band) {
+    case "LOW":
+      return "Reliable";
+    case "MEDIUM":
+      return "Watch";
+    case "HIGH":
+      return "High Risk";
+    case "UNKNOWN":
+      return "No History";
   }
 }
 
 export function VendorRiskList({ vendors }: VendorRiskListProps) {
-  const sorted = [...vendors].sort((a, b) => b.riskScore - a.riskScore);
+  const sorted = [...vendors].sort(
+    (a, b) => Number(b.current_exposure) - Number(a.current_exposure),
+  );
 
   if (vendors.length === 0) {
     return (
@@ -72,54 +74,38 @@ export function VendorRiskList({ vendors }: VendorRiskListProps) {
             <TableRow>
               <TableHead>Vendor</TableHead>
               <TableHead>GSTIN</TableHead>
-              <TableHead className="text-center">Risk Score</TableHead>
+              <TableHead className="text-center">On-Time Rate</TableHead>
               <TableHead className="text-center">Status</TableHead>
-              <TableHead className="text-center">Missed</TableHead>
-              <TableHead>Last Filed</TableHead>
+              <TableHead className="text-right">Exposure</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sorted.map((vendor) => (
-              <TableRow key={vendor.id}>
+            {sorted.slice(0, 10).map((vendor) => (
+              <TableRow key={vendor.vendor_id}>
                 <TableCell className="font-medium">{vendor.name}</TableCell>
                 <TableCell className="font-mono text-xs">
-                  {vendor.gstin}
-                </TableCell>
-                <TableCell className="text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="h-2 w-16 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          vendor.riskScore > 70
-                            ? "bg-risk-critical"
-                            : vendor.riskScore > 30
-                            ? "bg-risk-high"
-                            : "bg-risk-low"
-                        }`}
-                        style={{ width: `${vendor.riskScore}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-mono w-8">
-                      {vendor.riskScore}
+                  {vendor.gstin ?? (
+                    <span
+                      className="flex items-center gap-1 text-muted-foreground italic"
+                      title="No GSTIN could be resolved for this vendor"
+                    >
+                      <ShieldQuestion className="h-3 w-3" />
+                      unverified
                     </span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-center">
-                  <Badge variant={riskBadgeVariant(vendor.riskTier)}>
-                    {riskTierLabel(vendor.riskTier)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-center">
-                  {vendor.missedFilings > 0 ? (
-                    <span className="text-risk-critical font-medium">
-                      {vendor.missedFilings}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">0</span>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {vendor.lastFilingDate}
+                <TableCell className="text-center text-xs">
+                  {vendor.on_time_rate !== null
+                    ? `${Math.round(vendor.on_time_rate * 100)}%`
+                    : "—"}
+                </TableCell>
+                <TableCell className="text-center">
+                  <Badge variant={riskBadgeVariant(vendor.risk_band)}>
+                    {riskLabel(vendor.risk_band)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right text-sm font-medium">
+                  {formatCurrency(Number(vendor.current_exposure))}
                 </TableCell>
               </TableRow>
             ))}
