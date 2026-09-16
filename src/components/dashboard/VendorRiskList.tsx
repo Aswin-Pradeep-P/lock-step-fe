@@ -1,130 +1,83 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import type { Vendor } from "@/types";
-import { Users } from "lucide-react";
+/**
+ * Vendors ranked by exposure × risk, with the filing history that no reconciliation
+ * tool can show. The band comes from rules on filing behaviour, not a model score.
+ */
 
-interface VendorRiskListProps {
-  vendors: Vendor[];
+import { Link } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RISK_META, describeFiling, formatInr } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import type { VendorRisk } from "@/types";
+import { ArrowUpRight, Clock } from "lucide-react";
+
+interface Props {
+  vendors: VendorRisk[];
+  periodId: string;
+  limit?: number;
 }
 
-function riskBadgeVariant(tier: Vendor["riskTier"]) {
-  switch (tier) {
-    case "green":
-      return "success" as const;
-    case "amber":
-      return "warning" as const;
-    case "red":
-      return "danger" as const;
-  }
-}
-
-function riskTierLabel(tier: Vendor["riskTier"]) {
-  switch (tier) {
-    case "green":
-      return "Compliant";
-    case "amber":
-      return "Late Filer";
-    case "red":
-      return "Non-Compliant";
-  }
-}
-
-export function VendorRiskList({ vendors }: VendorRiskListProps) {
-  const sorted = [...vendors].sort((a, b) => b.riskScore - a.riskScore);
-
-  if (vendors.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Vendor Risk</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-            <Users className="h-10 w-10 mb-3 opacity-50" />
-            <p className="text-sm">No vendor data available.</p>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+export function VendorRiskList({ vendors, periodId, limit = 8 }: Props) {
+  const ranked = vendors.filter((v) => v.missing_invoice_count > 0).slice(0, limit);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Vendor Risk</CardTitle>
+        <CardTitle>Vendors by exposure</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Ranked by money at risk × how reliably they file.
+        </p>
       </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Vendor</TableHead>
-              <TableHead>GSTIN</TableHead>
-              <TableHead className="text-center">Risk Score</TableHead>
-              <TableHead className="text-center">Status</TableHead>
-              <TableHead className="text-center">Missed</TableHead>
-              <TableHead>Last Filed</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.map((vendor) => (
-              <TableRow key={vendor.id}>
-                <TableCell className="font-medium">{vendor.name}</TableCell>
-                <TableCell className="font-mono text-xs">
-                  {vendor.gstin}
-                </TableCell>
-                <TableCell className="text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="h-2 w-16 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${
-                          vendor.riskScore > 70
-                            ? "bg-risk-critical"
-                            : vendor.riskScore > 30
-                            ? "bg-risk-high"
-                            : "bg-risk-low"
-                        }`}
-                        style={{ width: `${vendor.riskScore}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-mono w-8">
-                      {vendor.riskScore}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-center">
-                  <Badge variant={riskBadgeVariant(vendor.riskTier)}>
-                    {riskTierLabel(vendor.riskTier)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-center">
-                  {vendor.missedFilings > 0 ? (
-                    <span className="text-risk-critical font-medium">
-                      {vendor.missedFilings}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">0</span>
+      <CardContent className="space-y-1">
+        {ranked.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No vendor has invoices missing from this period&apos;s GSTR-2B.
+          </p>
+        )}
+        {ranked.map((vendor) => (
+          <Link
+            key={vendor.vendor_id}
+            to={`/vendors/${vendor.vendor_id}?period=${periodId}`}
+            className="group flex items-start gap-4 rounded-lg px-3 py-3 transition-colors hover:bg-muted/60"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{vendor.name}</span>
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-xs font-semibold",
+                    RISK_META[vendor.risk_band].tone,
                   )}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {vendor.lastFilingDate}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                >
+                  {RISK_META[vendor.risk_band].label}
+                </span>
+                {vendor.predicted_late ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-risk-critical/10 px-2 py-0.5 text-xs font-semibold text-risk-critical">
+                    <Clock className="h-3 w-3" />
+                    likely to miss the 13th
+                  </span>
+                ) : (
+                  !vendor.filed_this_period && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      not filed yet
+                    </span>
+                  )
+                )}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{describeFiling(vendor)}</p>
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="font-semibold tabular-nums">
+                {formatInr(vendor.current_exposure)}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {vendor.missing_invoice_count} invoice
+                {vendor.missing_invoice_count === 1 ? "" : "s"}
+              </div>
+            </div>
+            <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </Link>
+        ))}
       </CardContent>
     </Card>
   );

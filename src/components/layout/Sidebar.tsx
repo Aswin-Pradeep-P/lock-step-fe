@@ -1,18 +1,12 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard,
-  FilePlus,
-  History,
-  Shield,
-  Menu,
-  X,
-} from "lucide-react";
+import { LayoutDashboard, FilePlus, SlidersHorizontal, Shield, Menu, X } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "New Reconciliation", href: "/reconcile", icon: FilePlus },
+  { label: "Thresholds", href: "/settings", icon: SlidersHorizontal },
 ];
 
 export function Sidebar() {

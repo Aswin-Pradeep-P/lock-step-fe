@@ -1,78 +1,63 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { formatCurrency, formatNumber } from "@/lib/utils";
-import {
-  Activity,
-  TrendingUp,
-  AlertTriangle,
-  ShieldAlert,
-  HandCoins,
-} from "lucide-react";
-import type { ReconciliationRunSummary, Vendor } from "@/types";
+/**
+ * The original four stat cards, kept — same layout, same icon-chip styling.
+ *
+ * What changed is what they count. "Total Runs" and "Avg Match Rate" describe the
+ * past; the deadline is the thing a user can still act on, so the countdown takes
+ * the second slot and the rest follow from the open period.
+ */
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatInr, formatNumber } from "@/lib/format";
+import type { Headline, VendorRisk } from "@/types";
+import { AlertTriangle, CalendarClock, HandCoins, TrendingUp } from "lucide-react";
 
 interface StatsCardsProps {
-  runs: ReconciliationRunSummary[];
-  vendors: Vendor[];
+  headline: Headline;
+  vendors: VendorRisk[];
 }
 
-export function StatsCards({ runs, vendors }: StatsCardsProps) {
-  const totalRuns = runs.length;
-  const avgMatchRate =
-    runs.length > 0
-      ? Math.round(
-          runs.reduce(
-            (acc, r) =>
-              acc +
-              (r.totalRecords > 0
-                ? ((r.matchedCount + r.lowRiskCount) / r.totalRecords) * 100
-                : 0),
-            0
-          ) / runs.length
-        )
-      : 0;
-  const vendorsAtRisk = vendors.filter((v) => v.riskTier === "red").length;
-  const totalTaxAtRisk = runs.reduce((acc, r) => acc + r.totalTaxAtRisk, 0);
-  const recordsNeedingReview = runs.reduce(
-    (acc, r) => acc + r.highRiskCount + r.cannotFileCount,
-    0,
-  );
+export function StatsCards({ headline, vendors }: StatsCardsProps) {
+  const counts = headline.status_counts;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const clean = (counts.EXACT_MATCH ?? 0) + (counts.CARRIED_FORWARD ?? 0) + (counts.RESOLVED ?? 0);
+  const matchRate = total > 0 ? Math.round((clean / total) * 100) : 0;
+  const days = headline.days_to_cutoff;
+  const open = headline.window_open;
 
   const stats = [
     {
-      title: "Total Runs",
-      value: formatNumber(totalRuns),
-      icon: Activity,
-      description: "Reconciliation runs completed",
-      color: "text-primary",
-      bg: "bg-primary/10",
-    },
-    {
-      title: "Avg Match Rate",
-      value: `${avgMatchRate}%`,
-      icon: TrendingUp,
-      description: "Across all reconciliation runs",
-      color: "text-risk-low",
-      bg: "bg-risk-low/10",
-    },
-    {
-      title: "Payments at Risk",
-      value: formatNumber(recordsNeedingReview),
+      title: "ITC at Risk",
+      value: formatInr(headline.amount_at_risk),
       icon: HandCoins,
-      description: formatCurrency(totalTaxAtRisk) + " in ITC needs review",
+      description: `${headline.invoices_at_risk} invoices not in GSTR-2B yet`,
+      color: "text-risk-critical",
+      bg: "bg-risk-critical/10",
+    },
+    {
+      title: open ? "Days to the 13th" : "Days Past the 13th",
+      value: formatNumber(Math.abs(days)),
+      icon: CalendarClock,
+      description: open
+        ? "while the vendor can still act"
+        : "credit has slipped to next period",
+      color: open ? "text-primary" : "text-risk-critical",
+      bg: open ? "bg-primary/10" : "bg-risk-critical/10",
+    },
+    {
+      title: "Vendors Outstanding",
+      value: formatNumber(headline.vendors_not_filed),
+      icon: AlertTriangle,
+      description: "haven't filed this period — nudge them",
       color: "text-risk-high",
       bg: "bg-risk-high/10",
     },
     {
-      title: "Vendors At Risk",
-      value: formatNumber(vendorsAtRisk),
-      icon: AlertTriangle,
-      description: "Non-compliant — nudge or escalate",
-      color: "text-risk-critical",
-      bg: "bg-risk-critical/10",
+      title: "Match Rate",
+      value: `${matchRate}%`,
+      icon: TrendingUp,
+      description: `${formatNumber(total)} invoices across ${vendors.length} vendors`,
+      color: "text-risk-low",
+      bg: "bg-risk-low/10",
     },
   ];
 
@@ -90,9 +75,7 @@ export function StatsCards({ runs, vendors }: StatsCardsProps) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stat.value}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {stat.description}
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{stat.description}</p>
           </CardContent>
         </Card>
       ))}
