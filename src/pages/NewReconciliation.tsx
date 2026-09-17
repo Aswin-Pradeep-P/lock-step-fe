@@ -210,10 +210,19 @@ export default function NewReconciliation() {
     [updateInference],
   );
 
-  const handleTallyFile = useCallback((file: File) => {
-    setTallyImportedFile(file);
-    setError(null);
-  }, []);
+  const handleTallyFile = useCallback(
+    async (file: File) => {
+      setTallyImportedFile(file);
+      setError(null);
+      // TallyConnect hands back a CSV File, exactly like the uploader does — so run it
+      // through the same parse. Without this the Tally path showed no preview, and
+      // (because inference reads preview rows) never inferred the tax period either.
+      const preview = await getMultiFilePreviewRows([file]);
+      setLedgerPreview(preview);
+      updateInference(preview);
+    },
+    [updateInference],
+  );
 
   const handleGstr2bFilesChange = useCallback(
     async (files: File[]) => {
@@ -398,20 +407,27 @@ export default function NewReconciliation() {
               <TallyConnect
                 onFileReady={handleTallyFile}
                 importedCount={tallyImportedFile ? 1 : null}
+                onCleared={() => {
+                  setTallyImportedFile(null);
+                  setLedgerPreview([]);
+                }}
               />
             ) : (
-              <>
-                <FileUploader
-                  label="Upload Purchase Register"
-                  description="Tally IGST / CGST+SGST export — XLSX or CSV"
-                  accept=".xlsx,.xls,.csv"
-                  files={ledgerFiles}
-                  onFilesChange={handleLedgerFilesChange}
-                />
-                {ledgerPreview.length > 0 && (
-                  <FilePreview rows={ledgerPreview} title="Purchase Register" />
-                )}
-              </>
+              <FileUploader
+                label="Upload Purchase Register"
+                description="Tally IGST / CGST+SGST export — XLSX or CSV"
+                accept=".xlsx,.xls,.csv"
+                files={ledgerFiles}
+                onFilesChange={handleLedgerFilesChange}
+              />
+            )}
+
+            {/* Outside the source branch: the preview describes the purchase register
+                itself, and reads the same whether the rows were uploaded or pulled
+                from Tally. Seeing the rows before reconciling is how you catch the
+                wrong month or the wrong company. */}
+            {ledgerPreview.length > 0 && (
+              <FilePreview rows={ledgerPreview} title="Purchase Register" />
             )}
           </CardContent>
         </Card>

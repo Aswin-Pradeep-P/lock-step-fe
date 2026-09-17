@@ -26,6 +26,25 @@ export interface TallyPurchaseResult {
   company: string;
 }
 
+
+/** Tally rejects a company name containing raw XML metacharacters. */
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Tally emits control characters XML forbids — a real export carries
+ * "&#4; Not Applicable" in CSTFORMISSUETYPE. Harmless for regex parsing, but it
+ * would otherwise ride along into the CSV we hand the backend.
+ */
+function stripIllegalChars(xml: string): string {
+  return xml.replace(/&#(\d+);/g, (match, code) => (Number(code) < 32 ? "" : match));
+}
+
 async function postXml(xml: string): Promise<string> {
   const response = await fetch("/tally", {
     method: "POST",
@@ -35,7 +54,19 @@ async function postXml(xml: string): Promise<string> {
   if (!response.ok) {
     throw new Error(`TallyPrime connection failed (${response.status})`);
   }
-  return response.text();
+  return stripIllegalChars(await response.text());
+}
+
+/** Tally escapes its XML, so a party named "Laxmi Electricals & Trading Co" arrives
+ *  as "...&amp;...". Left encoded, it never matches the same vendor in GSTR-2B. */
+function decodeXml(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 function extractTagValues(xml: string, tag: string): string[] {
@@ -43,7 +74,7 @@ function extractTagValues(xml: string, tag: string): string[] {
   const values: string[] = [];
   let match;
   while ((match = regex.exec(xml)) !== null) {
-    values.push(match[1].trim());
+    values.push(decodeXml(match[1].trim()));
   }
   return values;
 }
@@ -55,16 +86,25 @@ function extractTagValue(xml: string, tag: string, defaultVal = ""): string {
 
 export async function checkTallyConnection(): Promise<TallyConnectionResult> {
   try {
+    // "List of Companies" is a COLLECTION, not a report. Asking for it as a report
+    // gets "Could not find Report 'List of Companies'!" and the connection silently
+    // reads as offline.
     const xml = `<ENVELOPE>
-  <HEADER><TALLYREQUEST>Export Data</TALLYREQUEST></HEADER>
-  <BODY><EXPORTDATA>
-    <REQUESTDESC><REPORTNAME>List of Companies</REPORTNAME></REQUESTDESC>
-  </EXPORTDATA></BODY>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>List of Companies</ID>
+  </HEADER>
+  <BODY><DESC><STATICVARIABLES>
+    <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+  </STATICVARIABLES></DESC></BODY>
 </ENVELOPE>`;
 
     const response = await postXml(xml);
-    const companies = extractTagValues(response, "SVCCOMPANY")
-      .concat(extractTagValues(response, "NAME"))
+    const companies = [...response.matchAll(/<COMPANY\s+NAME="([^"]+)"/gi)]
+      .map((m) => m[1].trim())
+      .concat(extractTagValues(response, "SVCCOMPANY"))
       .filter((c) => c.length > 0 && !c.startsWith("##"));
 
     const unique = [...new Set(companies)];
@@ -84,26 +124,29 @@ export async function fetchTallyPurchaseRegister(
   fromDate?: string,
   toDate?: string,
 ): Promise<TallyPurchaseResult> {
+  // "Day Book" returns a single collapsed voucher no matter the date range. The
+  // Voucher Register data export is the one that actually yields every voucher with
+  // its ledger entries. Dates must carry TYPE="Date" or Tally ignores them entirely
+  // and falls back to the company's current period.
   const dateFilter =
     fromDate && toDate
-      ? `<SVFROMDATE>${fromDate}</SVFROMDATE>\n          <SVTODATE>${toDate}</SVTODATE>`
+      ? `<SVFROMDATE TYPE="Date">${fromDate}</SVFROMDATE>
+    <SVTODATE TYPE="Date">${toDate}</SVTODATE>`
       : "";
 
   const xml = `<ENVELOPE>
   <HEADER>
-    <TALLYREQUEST>Export Data</TALLYREQUEST>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Data</TYPE>
+    <ID>Voucher Register</ID>
   </HEADER>
-  <BODY>
-    <EXPORTDATA>
-      <REQUESTDESC>
-        <STATICVARIABLES>
-          <SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY>
-          ${dateFilter}
-        </STATICVARIABLES>
-        <REPORTNAME>Day Book</REPORTNAME>
-      </REQUESTDESC>
-    </EXPORTDATA>
-  </BODY>
+  <BODY><DESC><STATICVARIABLES>
+    <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+    <SVCURRENTCOMPANY>${escapeXml(company)}</SVCURRENTCOMPANY>
+    ${dateFilter}
+    <VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+  </STATICVARIABLES></DESC></BODY>
 </ENVELOPE>`;
 
   const response = await postXml(xml);
@@ -115,19 +158,35 @@ export async function fetchTallyPurchaseRegister(
     if (!voucherType.includes("PURCHASE")) continue;
 
     const partyName = extractTagValue(v, "PARTYLEDGERNAME");
-    const voucherNumber = extractTagValue(v, "VOUCHERNUMBER") || extractTagValue(v, "REFERENCE");
-    const dateRaw = extractTagValue(v, "DATE");
+    // REFERENCE is the SUPPLIER's bill number — the only one GSTR-2B has ever seen.
+    // VOUCHERNUMBER is our own internal number (Tally even re-numbers it on import),
+    // so preferring it would make every invoice look missing.
+    const voucherNumber = extractTagValue(v, "REFERENCE") || extractTagValue(v, "VOUCHERNUMBER");
+    // Likewise REFERENCEDATE is the invoice date; DATE is when we booked it.
+    const dateRaw = extractTagValue(v, "REFERENCEDATE") || extractTagValue(v, "DATE");
 
     const allAmounts = extractTagValues(v, "AMOUNT").map(Number).filter((n) => !isNaN(n));
     const totalAmount = allAmounts.length > 0 ? Math.abs(allAmounts[0]) : 0;
 
     const gstin = extractTagValue(v, "PARTYGSTIN") || extractTagValue(v, "GSTREGISTRATION");
 
-    const igst = Math.abs(Number(extractTagValue(v, "IGSTAMOUNT")) || 0);
-    const cgst = Math.abs(Number(extractTagValue(v, "CGSTAMOUNT")) || 0);
-    const sgst = Math.abs(Number(extractTagValue(v, "SGSTAMOUNT")) || 0);
-    const cess = Math.abs(Number(extractTagValue(v, "CESSAMOUNT")) || 0);
-    const totalTax = igst + cgst + sgst + cess || totalAmount * 0.18;
+    // Tally keeps GST in the ledger entries, not in IGSTAMOUNT-style tags, so read the
+    // tax off the entry whose ledger is named for that head. The old 18% fallback
+    // INVENTED a tax figure whenever those tags were absent — which was always — and
+    // an invented number is the one thing a tax tool must never show.
+    const taxes = { igst: 0, cgst: 0, sgst: 0, cess: 0 };
+    for (const entry of v.split(/<ALLLEDGERENTRIES\.LIST>|<LEDGERENTRIES\.LIST>/i).slice(1)) {
+      const ledger = extractTagValue(entry, "LEDGERNAME").toLowerCase();
+      const amount = Math.abs(Number(extractTagValue(entry, "AMOUNT")) || 0);
+      if (!amount) continue;
+      if (ledger.includes("igst") || ledger.includes("integrated")) taxes.igst += amount;
+      else if (ledger.includes("cgst") || ledger.includes("central")) taxes.cgst += amount;
+      else if (ledger.includes("sgst") || ledger.includes("utgst") || ledger.includes("state"))
+        taxes.sgst += amount;
+      else if (ledger.includes("cess")) taxes.cess += amount;
+    }
+    const { igst, cgst, sgst, cess } = taxes;
+    const totalTax = igst + cgst + sgst + cess;
 
     records.push({
       invoice_number: voucherNumber || `TALLY-${records.length + 1}`,

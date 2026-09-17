@@ -30,9 +30,11 @@ import {
 interface TallyConnectProps {
   onFileReady: (file: File) => void;
   importedCount: number | null;
+  /** Clearing the import must also clear the preview it produced. */
+  onCleared?: () => void;
 }
 
-export function TallyConnect({ onFileReady, importedCount }: TallyConnectProps) {
+export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyConnectProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [companies, setCompanies] = useState<string[]>([]);
@@ -115,7 +117,14 @@ export function TallyConnect({ onFileReady, importedCount }: TallyConnectProps) 
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleDisconnect}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              handleDisconnect();
+              onCleared?.();
+            }}
+          >
             Clear
           </Button>
         </div>
