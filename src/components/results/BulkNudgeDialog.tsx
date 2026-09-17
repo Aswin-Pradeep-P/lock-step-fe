@@ -8,11 +8,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { bulkNudgeVendors } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 import { canNudgeVendor } from "@/lib/risk";
 import { formatCurrency } from "@/lib/utils";
 import type { Invoice } from "@/types";
-import { Loader2, Send, CheckCircle2, X, Mail } from "lucide-react";
+import { Loader2, Send, Mail } from "lucide-react";
 
 export interface VendorNudgeRow {
   vendorId: string;
@@ -64,28 +66,15 @@ export function BulkNudgeDialog({
   checkId,
   onSent,
 }: BulkNudgeDialogProps) {
+  const { toast } = useToast();
   const vendors = useMemo(() => groupNudgeableVendors(invoices), [invoices]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [failMsg, setFailMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setSelected(new Set(vendors.map((v) => v.vendorId)));
-    setError(null);
   }, [open, vendors]);
-
-  // Auto-dismiss success / error notifier
-  useEffect(() => {
-    if (!successMsg && !failMsg) return;
-    const t = setTimeout(() => {
-      setSuccessMsg(null);
-      setFailMsg(null);
-    }, 4500);
-    return () => clearTimeout(t);
-  }, [successMsg, failMsg]);
 
   const selectedVendors = vendors.filter((v) => selected.has(v.vendorId));
   const selectedInvoiceCount = selectedVendors.reduce((s, v) => s + v.invoiceCount, 0);
@@ -108,9 +97,6 @@ export function BulkNudgeDialog({
   const handleConfirm = async () => {
     if (selected.size === 0 || isSending) return;
     const vendorIds = [...selected];
-    setError(null);
-    setSuccessMsg(null);
-    setFailMsg(null);
 
     // Hide the vendor list immediately, then show the sending overlay.
     onOpenChange(false);
@@ -127,15 +113,15 @@ export function BulkNudgeDialog({
       await sleep(remaining);
 
       setIsSending(false);
-      setSuccessMsg(
-        `Emails sent to ${result.nudged_vendors} vendor${result.nudged_vendors === 1 ? "" : "s"} · ${result.nudged_invoices} invoice${result.nudged_invoices === 1 ? "" : "s"} logged`,
+      toast.success(
+        `Emails sent to ${result.nudged_vendors} vendor${result.nudged_vendors === 1 ? "" : "s"} · ${result.nudged_invoices} invoice${result.nudged_invoices === 1 ? "" : "s"} logged.`,
       );
       onSent();
     } catch (err) {
       const remaining = Math.max(0, 1000 - (Date.now() - started));
       await sleep(remaining);
       setIsSending(false);
-      setFailMsg(err instanceof Error ? err.message : "Failed to bulk nudge");
+      toast.error(friendlyError(err, { fallback: "Couldn't nudge the selected vendors." }));
     }
   };
 
@@ -198,8 +184,6 @@ export function BulkNudgeDialog({
                 ))}
               </div>
 
-              {error && <p className="text-sm text-destructive">{error}</p>}
-
               <DialogFooter>
                 <Button variant="outline" onClick={() => onOpenChange(false)}>
                   Cancel
@@ -240,42 +224,6 @@ export function BulkNudgeDialog({
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Success / error notifier */}
-      {(successMsg || failMsg) && (
-        <div className="fixed bottom-6 right-6 z-[100] max-w-sm animate-in slide-in-from-bottom-4 fade-in duration-300">
-          <div
-            className={`flex items-start gap-3 rounded-lg border bg-background p-4 shadow-lg ${
-              failMsg ? "border-destructive/40" : "border-primary/30"
-            }`}
-          >
-            {failMsg ? (
-              <X className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-            ) : (
-              <CheckCircle2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">
-                {failMsg ? "Nudge failed" : "Vendors nudged"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {failMsg ?? successMsg}
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label="Dismiss"
-              className="rounded-md p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => {
-                setSuccessMsg(null);
-                setFailMsg(null);
-              }}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }

@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { NudgeVendorModal } from "@/components/results/NudgeVendorModal";
 import { ActivityTimeline } from "@/components/results/ActivityTimeline";
+import { useToast } from "@/components/ui/toast";
+import { friendlyError } from "@/lib/errors";
 import { formatCurrency } from "@/lib/utils";
 import { STATUS_LABEL, bucketOf, reasonTag, canNudgeVendor, formatMatchReason } from "@/lib/risk";
 import {
@@ -79,6 +81,7 @@ export function RecordTable({
   const [actions, setActions] = useState<Record<string, InvoiceAction[]>>({});
   const [insights, setInsights] = useState<Record<string, InvoiceInsight>>({});
   const [insightLoading, setInsightLoading] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     setPage(0);
@@ -126,11 +129,14 @@ export function RecordTable({
         await createInvoiceAction(invoice.id, "MARKED_RESOLVED");
         onInvoiceUpdate();
         refreshActions(invoice.id);
+        toast.success(`Invoice ${invoice.invoice_number} marked resolved.`);
+      } catch (err) {
+        toast.error(friendlyError(err, { fallback: "Couldn't mark this invoice resolved." }));
       } finally {
         setActionLoading(null);
       }
     },
-    [onInvoiceUpdate, refreshActions],
+    [onInvoiceUpdate, refreshActions, toast],
   );
 
   const handleEscalate = useCallback(
@@ -140,11 +146,14 @@ export function RecordTable({
         await createInvoiceAction(invoice.id, "PAYMENT_HOLD_PROPOSED");
         onInvoiceUpdate();
         refreshActions(invoice.id);
+        toast.success(`Payment hold proposed for ${invoice.invoice_number} — logged for approval.`);
+      } catch (err) {
+        toast.error(friendlyError(err, { fallback: "Couldn't escalate this invoice." }));
       } finally {
         setActionLoading(null);
       }
     },
-    [onInvoiceUpdate, refreshActions],
+    [onInvoiceUpdate, refreshActions, toast],
   );
 
   const handleFlag = useCallback(
@@ -154,11 +163,14 @@ export function RecordTable({
         await createInvoiceAction(invoice.id, "IGNORED");
         onInvoiceUpdate();
         refreshActions(invoice.id);
+        toast.success(`Invoice ${invoice.invoice_number} flagged for review.`);
+      } catch (err) {
+        toast.error(friendlyError(err, { fallback: "Couldn't flag this invoice." }));
       } finally {
         setActionLoading(null);
       }
     },
-    [onInvoiceUpdate, refreshActions],
+    [onInvoiceUpdate, refreshActions, toast],
   );
 
   const sorted = useMemo(() => {
@@ -615,6 +627,9 @@ export function RecordTable({
           periodId={periodId}
           onSent={() => {
             onInvoiceUpdate();
+            toast.success(
+              `Vendor nudged about invoice ${nudgeInvoice.invoice_number}.`,
+            );
           }}
         />
       )}

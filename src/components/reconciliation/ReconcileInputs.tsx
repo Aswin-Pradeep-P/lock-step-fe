@@ -352,27 +352,30 @@ export function ReconcileInputs({
             onFilesChange={c.handleGstr2bFilesChange}
           />
         ) : c.gspCount !== null && c.gspCount > 0 ? (
-          <div className="flex flex-col justify-center rounded-lg border-2 border-primary/20 bg-primary/5 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium">
-                  {c.gspCount} invoices imported from GSTR-2B
+          <div className="relative flex flex-col justify-center rounded-lg border-2 border-primary/20 bg-primary/5 p-5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={c.clearGsp}
+              className="absolute right-2 top-2"
+            >
+              Clear
+            </Button>
+            <div className="pr-16">
+              <p className="text-sm font-medium">
+                {c.gspCount} invoices imported from GSTR-2B
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Fetched from the GST portal
+              </p>
+              {c.gspDefects && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {c.gspDefects.exact} matched · {c.gspDefects.clerical} typos ·{" "}
+                  {c.gspDefects.amount_mismatch} tax diffs ·{" "}
+                  {c.gspDefects.missing_in_2b} not filed ·{" "}
+                  {c.gspDefects.itc_ineligible} ITC blocked
                 </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Fetched from the GST portal
-                </p>
-                {c.gspDefects && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {c.gspDefects.exact} matched · {c.gspDefects.clerical} typos ·{" "}
-                    {c.gspDefects.amount_mismatch} tax diffs ·{" "}
-                    {c.gspDefects.missing_in_2b} not filed ·{" "}
-                    {c.gspDefects.itc_ineligible} ITC blocked
-                  </p>
-                )}
-              </div>
-              <Button variant="ghost" size="sm" onClick={c.clearGsp}>
-                Clear
-              </Button>
+              )}
             </div>
           </div>
         ) : (

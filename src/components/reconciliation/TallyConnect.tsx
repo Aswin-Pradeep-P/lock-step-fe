@@ -19,13 +19,14 @@ import {
 import {
   Loader2,
   CheckCircle2,
-  XCircle,
   HelpCircle,
   Download,
   Server,
   Building2,
   Calendar,
 } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
+import { friendlyError } from "@/lib/errors";
 
 interface TallyConnectProps {
   onFileReady: (file: File) => void;
@@ -35,6 +36,7 @@ interface TallyConnectProps {
 }
 
 export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyConnectProps) {
+  const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [companies, setCompanies] = useState<string[]>([]);
@@ -49,55 +51,53 @@ export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyCon
     return `${last.getFullYear()}${String(last.getMonth() + 1).padStart(2, "0")}${String(last.getDate()).padStart(2, "0")}`;
   });
   const [isImporting, setIsImporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
 
   const handleConnect = useCallback(async () => {
     setIsConnecting(true);
-    setError(null);
     setWarning(null);
     try {
       const result = await checkTallyConnection();
       setIsConnected(result.connected);
       if (!result.connected) {
-        setError("Cannot connect to TallyPrime. Make sure it is running with the HTTP server enabled on port 9000.");
+        toast.error(
+          "Cannot connect to TallyPrime. Make sure it is running with the HTTP server enabled on port 9000.",
+        );
         return;
       }
       setCompanies(result.companies);
       if (result.companies.length > 0) setSelectedCompany(result.companies[0]);
       if (result.warning) setWarning(result.warning);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect to TallyPrime");
+      toast.error(friendlyError(err, { fallback: "Couldn't connect to TallyPrime." }));
       setIsConnected(false);
     } finally {
       setIsConnecting(false);
     }
-  }, []);
+  }, [toast]);
 
   const handleImport = useCallback(async () => {
     if (!selectedCompany) return;
     setIsImporting(true);
-    setError(null);
     try {
       const result = await fetchTallyPurchaseRegister(selectedCompany, fromDate, toDate);
       if (result.records.length === 0) {
-        setError("No purchase vouchers found for the selected period.");
+        toast.error("No purchase vouchers found for the selected period.");
         return;
       }
       const file = tallyRecordsToCsvFile(result.records);
       onFileReady(file);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to import records from TallyPrime");
+      toast.error(friendlyError(err, { fallback: "Couldn't import records from TallyPrime." }));
     } finally {
       setIsImporting(false);
     }
-  }, [selectedCompany, fromDate, toDate, onFileReady]);
+  }, [selectedCompany, fromDate, toDate, onFileReady, toast]);
 
   const handleDisconnect = () => {
     setIsConnected(false);
     setCompanies([]);
     setSelectedCompany("");
-    setError(null);
     setWarning(null);
   };
 
@@ -243,13 +243,6 @@ export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyCon
       {warning && (
         <div className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400">
           {warning}
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive flex items-start gap-2">
-          <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
-          {error}
         </div>
       )}
     </div>

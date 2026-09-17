@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchVendorEmailDraft, createInvoiceAction } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 import type { Invoice, VendorEmailDraft } from "@/types";
 import { Mail, Copy, Send, Loader2, CheckCircle2, ShieldOff } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
@@ -48,7 +49,7 @@ export function NudgeVendorModal({
         setDraft(d);
         setBody(d.body);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load draft"))
+      .catch((err) => setError(friendlyError(err, { fallback: "Couldn't load the email draft." })))
       .finally(() => setLoading(false));
   }, [open, invoice.vendor_id, periodId]);
 
@@ -71,7 +72,7 @@ export function NudgeVendorModal({
       setSent(true);
       onSent();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to record the notification");
+      setError(friendlyError(err, { fallback: "Couldn't record the notification." }));
     } finally {
       setIsSending(false);
     }

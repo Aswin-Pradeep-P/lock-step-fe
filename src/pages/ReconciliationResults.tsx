@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tooltip } from "@/components/ui/tooltip";
+import { friendlyError } from "@/lib/errors";
 import { fetchHeadline, fetchInvoices, fetchVendorDetail } from "@/lib/api";
 import { BUCKET_LABEL, STATUS_LABEL, bucketOf, riskExposure } from "@/lib/risk";
 import type { Headline, Invoice, InvoiceMatchStatus, RiskBucket, VendorDetail } from "@/types";
@@ -59,7 +61,7 @@ export default function ReconciliationResults() {
       );
       setVendorSummaries(summaries.filter((s): s is VendorDetail => s !== null));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load reconciliation");
+      setError(friendlyError(err, { fallback: "Couldn't load this reconciliation." }));
     } finally {
       setLoading(false);
     }
@@ -152,15 +154,27 @@ export default function ReconciliationResults() {
   return (
     <div>
       <Header title="Reconciliation Results">
-        <Button
-          variant="outline"
-          className="gap-2"
-          disabled={nudgeableVendorCount === 0}
-          onClick={() => setBulkNudgeOpen(true)}
+        <Tooltip
+          content={
+            hasAnyFilter
+              ? "No vendors to nudge in this filtered view — clear the filters or select invoices awaiting a supplier filing."
+              : "Nothing to nudge — no invoices are waiting on a supplier to file."
+          }
+          enabled={nudgeableVendorCount === 0}
         >
-          <Send className="h-4 w-4" />
-          Bulk Nudge
-        </Button>
+          {/* span wrapper: a disabled button doesn't emit the hover the tooltip needs */}
+          <span className="inline-flex">
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={nudgeableVendorCount === 0}
+              onClick={() => setBulkNudgeOpen(true)}
+            >
+              <Send className="h-4 w-4" />
+              Bulk Nudge
+            </Button>
+          </span>
+        </Tooltip>
         <Button
           variant="outline"
           className="gap-2"
