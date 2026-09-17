@@ -16,9 +16,23 @@ import {
   createPeriod,
   createCheck,
   createCheckFromGsp,
+  fetchGstr2b,
+  flattenGstr2bPreview,
+  type Gstr2bDefects,
+  type Gstr2bVariant,
 } from "@/lib/api";
 import type { Period } from "@/types";
-import { Loader2, ArrowRight, Upload, Globe, Server, CalendarCheck } from "lucide-react";
+import {
+  Loader2,
+  ArrowRight,
+  Upload,
+  Globe,
+  Server,
+  AlertTriangle,
+  CheckCheck,
+  Download,
+  CalendarCheck,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type LedgerSource = "tally" | "upload";
@@ -42,20 +56,19 @@ function formatMonthLabel(mmyyyy: string): string {
 }
 
 interface DateRange {
-  from: string; // MMYYYY
-  to: string;   // MMYYYY
-  fromDate?: string; // YYYY-MM-DD
-  toDate?: string;   // YYYY-MM-DD
+  from: string;
+  to: string;
+  fromDate?: string;
+  toDate?: string;
 }
 
-/** Extract all dates from preview rows and return the month range. */
 function inferDateRange(rows: Record<string, unknown>[]): DateRange | null {
   if (rows.length === 0) return null;
 
   const datePatterns = [
-    /(\d{2})\/(\d{2})\/(\d{4})/, // DD/MM/YYYY
-    /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
-    /(\d{2})-(\d{2})-(\d{4})/, // DD-MM-YYYY
+    /(\d{2})\/(\d{2})\/(\d{4})/,
+    /(\d{4})-(\d{2})-(\d{2})/,
+    /(\d{2})-(\d{2})-(\d{4})/,
   ];
 
   const allDates: Date[] = [];
@@ -119,8 +132,13 @@ export default function NewReconciliation() {
 
   const [gstr2bFiles, setGstr2bFiles] = useState<File[]>([]);
   const [gstr2bSource, setGstr2bSource] = useState<Gstr2bSource>("upload");
+  const [gstr2bVariant, setGstr2bVariant] = useState<Gstr2bVariant>("corrected");
   const [ledgerPreview, setLedgerPreview] = useState<Record<string, unknown>[]>([]);
   const [gstr2bPreview, setGstr2bPreview] = useState<Record<string, unknown>[]>([]);
+  const [gspPreview, setGspPreview] = useState<Record<string, unknown>[]>([]);
+  const [gspCount, setGspCount] = useState<number | null>(null);
+  const [gspDefects, setGspDefects] = useState<Gstr2bDefects | null>(null);
+  const [isFetchingGsp, setIsFetchingGsp] = useState(false);
   const [isReconciling, setIsReconciling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,16 +182,13 @@ export default function NewReconciliation() {
     }
   };
 
-  const updateInference = useCallback(
-    (allRows: Record<string, unknown>[]) => {
-      const range = inferDateRange(allRows);
-      if (range) {
-        setInferredRange(range);
-        setTaxPeriod(range.from);
-      }
-    },
-    [],
-  );
+  const updateInference = useCallback((allRows: Record<string, unknown>[]) => {
+    const range = inferDateRange(allRows);
+    if (range) {
+      setInferredRange(range);
+      setTaxPeriod(range.from);
+    }
+  }, []);
 
   const handleLedgerFilesChange = useCallback(
     async (files: File[]) => {
@@ -210,13 +225,58 @@ export default function NewReconciliation() {
     [updateInference, inferredRange],
   );
 
+  const handleGstr2bSourceSwitch = (source: Gstr2bSource) => {
+    setGstr2bSource(source);
+    setError(null);
+    if (source === "gsp") {
+      setGstr2bFiles([]);
+      setGstr2bPreview([]);
+    } else {
+      setGspPreview([]);
+      setGspCount(null);
+      setGspDefects(null);
+    }
+  };
+
+  const handleFetchGsp = async (variant: Gstr2bVariant = gstr2bVariant) => {
+    setIsFetchingGsp(true);
+    setError(null);
+    try {
+      const result = await fetchGstr2b(variant);
+      setGspCount(result.count);
+      setGspDefects(result.defects);
+      setGspPreview(flattenGstr2bPreview(result.data).slice(0, 5));
+    } catch (err) {
+      setGspPreview([]);
+      setGspCount(null);
+      setGspDefects(null);
+      setError(err instanceof Error ? err.message : "Failed to fetch GSTR-2B");
+    } finally {
+      setIsFetchingGsp(false);
+    }
+  };
+
+  const handleClearGsp = () => {
+    setGspPreview([]);
+    setGspCount(null);
+    setGspDefects(null);
+  };
+
   const handleReconcile = async () => {
     if (!clientId) return;
 
     const effectiveLedgerFile =
-      ledgerSource === "tally" ? tallyImportedFile : (ledgerFiles.length > 0 ? await mergeFiles(ledgerFiles) : null);
+      ledgerSource === "tally"
+        ? tallyImportedFile
+        : ledgerFiles.length > 0
+          ? await mergeFiles(ledgerFiles)
+          : null;
     const effectiveGstr2bFile =
-      gstr2bSource === "gsp" ? null : (gstr2bFiles.length > 0 ? await mergeFiles(gstr2bFiles) : null);
+      gstr2bSource === "gsp"
+        ? null
+        : gstr2bFiles.length > 0
+          ? await mergeFiles(gstr2bFiles)
+          : null;
 
     const hasGstr2bInput = gstr2bSource === "gsp" || effectiveGstr2bFile;
     if (!effectiveLedgerFile && !hasGstr2bInput) return;
@@ -232,7 +292,7 @@ export default function NewReconciliation() {
       );
       const check =
         gstr2bSource === "gsp"
-          ? await createCheckFromGsp(period.id, effectiveLedgerFile)
+          ? await createCheckFromGsp(period.id, effectiveLedgerFile, gstr2bVariant)
           : await createCheck(period.id, effectiveLedgerFile, effectiveGstr2bFile);
       navigate(`/reconcile/${period.id}/${check.id}`);
     } catch (err) {
@@ -259,11 +319,7 @@ export default function NewReconciliation() {
               <form onSubmit={handleSetup} className="space-y-4">
                 <div>
                   <label className="text-sm font-medium mb-1.5 block">Legal name</label>
-                  <Input
-                    value={setupName}
-                    onChange={(e) => setSetupName(e.target.value)}
-                    required
-                  />
+                  <Input value={setupName} onChange={(e) => setSetupName(e.target.value)} required />
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-1.5 block">GSTIN</label>
@@ -280,9 +336,7 @@ export default function NewReconciliation() {
                     {error}
                   </div>
                 )}
-                <Button type="submit" className="w-full">
-                  Continue
-                </Button>
+                <Button type="submit" className="w-full">Continue</Button>
               </form>
             </CardContent>
           </Card>
@@ -302,62 +356,6 @@ export default function NewReconciliation() {
       <Header title="New Reconciliation" />
 
       <div className="p-6 lg:p-8 max-w-4xl mx-auto space-y-6">
-        {/* Tax Period */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Tax Period</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {periods.length > 0 && (
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Re-run against an existing period
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {periods.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        setTaxPeriod(p.tax_period);
-                        setInferredRange(null);
-                      }}
-                      className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                        taxPeriod === p.tax_period
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-input hover:bg-muted"
-                      }`}
-                    >
-                      {formatTaxPeriod(p.tax_period)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div>
-              <label className="text-sm font-medium mb-2 block">
-                Or a new period (MMYYYY)
-              </label>
-              <div className="flex items-center gap-2 flex-wrap">
-                <Input
-                  value={taxPeriod}
-                  onChange={(e) => {
-                    setTaxPeriod(e.target.value.replace(/\D/g, "").slice(0, 6));
-                    setInferredRange(null);
-                  }}
-                  placeholder={currentTaxPeriod()}
-                  className="max-w-[160px] font-mono"
-                />
-                {rangeLabel && (
-                  <Badge variant="secondary" className="gap-1 text-[10px]">
-                    <CalendarCheck className="h-3 w-3" />
-                    {rangeLabel}
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Purchase Register */}
         <Card>
           <CardHeader>
@@ -421,7 +419,7 @@ export default function NewReconciliation() {
           <CardContent className="space-y-4">
             <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
               <button
-                onClick={() => setGstr2bSource("upload")}
+                onClick={() => handleGstr2bSourceSwitch("upload")}
                 className={cn(
                   "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                   gstr2bSource === "upload"
@@ -433,7 +431,7 @@ export default function NewReconciliation() {
                 Upload Files
               </button>
               <button
-                onClick={() => setGstr2bSource("gsp")}
+                onClick={() => handleGstr2bSourceSwitch("gsp")}
                 className={cn(
                   "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                   gstr2bSource === "gsp"
@@ -459,8 +457,37 @@ export default function NewReconciliation() {
                   <FilePreview rows={gstr2bPreview} title="GSTR-2B" />
                 )}
               </>
+            ) : gspCount !== null && gspCount > 0 ? (
+              <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {gspCount} invoices imported from GSTR-2B
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {gstr2bVariant === "corrected" ? "Corrected dataset" : "Inconsistent dataset"}
+                    </p>
+                    {gspDefects && gstr2bVariant === "inconsistent" && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {gspDefects.exact} matched · {gspDefects.clerical} typos ·{" "}
+                        {gspDefects.amount_mismatch} tax diffs ·{" "}
+                        {gspDefects.missing_in_2b} not filed ·{" "}
+                        {gspDefects.itc_ineligible} ITC blocked
+                      </p>
+                    )}
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={handleClearGsp}>
+                    Clear
+                  </Button>
+                </div>
+                {gspPreview.length > 0 && (
+                  <div className="mt-3">
+                    <FilePreview rows={gspPreview} title="GSTR-2B" />
+                  </div>
+                )}
+              </div>
             ) : (
-              <div className="rounded-lg border-2 border-dashed border-muted-foreground/25 p-5">
+              <div className="rounded-lg border-2 border-dashed border-muted-foreground/25 p-5 space-y-4">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-muted p-2 shrink-0">
                     <Globe className="h-5 w-5 text-muted-foreground" />
@@ -473,12 +500,57 @@ export default function NewReconciliation() {
                       No file needed — GSTR-2B comes from a GSP (GST Suvidha
                       Provider) API call instead of a manual download. This
                       deployment isn't connected to a live GSP subscription yet, so
-                      it currently returns a fixed sandbox sample rather than your
-                      real data — useful for testing the flow end to end before a
-                      real key is wired in.
+                      it currently returns a sandbox sample rather than your real
+                      data. Use Corrected for the as-filed sample, or Inconsistent
+                      to demo mismatches.
                     </p>
                   </div>
                 </div>
+                <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setGstr2bVariant("corrected")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      gstr2bVariant === "corrected"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    Corrected
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGstr2bVariant("inconsistent")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                      gstr2bVariant === "inconsistent"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Inconsistent
+                  </button>
+                </div>
+                <Button
+                  onClick={() => handleFetchGsp()}
+                  disabled={isFetchingGsp}
+                  className="w-full gap-2"
+                >
+                  {isFetchingGsp ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Fetching GSTR-2B...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      Fetch GSTR-2B
+                    </>
+                  )}
+                </Button>
               </div>
             )}
 
@@ -496,7 +568,35 @@ export default function NewReconciliation() {
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-wrap">
+            {rangeLabel && (
+              <Badge variant="secondary" className="gap-1 text-xs">
+                <CalendarCheck className="h-3.5 w-3.5" />
+                Period: {rangeLabel}
+              </Badge>
+            )}
+            {periods.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap">
+                {periods.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setTaxPeriod(p.tax_period);
+                      setInferredRange(null);
+                    }}
+                    className={`rounded-md border px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                      taxPeriod === p.tax_period
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-input hover:bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {formatTaxPeriod(p.tax_period)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <Button size="lg" disabled={!canReconcile} onClick={handleReconcile} className="gap-2">
             {isReconciling ? (
               <>

@@ -15,7 +15,6 @@ import {
   checkTallyConnection,
   fetchTallyPurchaseRegister,
   tallyRecordsToCsvFile,
-  type TallyPurchaseRecord,
 } from "@/lib/tally";
 import {
   Loader2,
@@ -109,9 +108,7 @@ export function TallyConnect({ onFileReady, importedCount }: TallyConnectProps) 
               <CheckCircle2 className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-medium">
-                Records imported from TallyPrime
-              </p>
+              <p className="text-sm font-medium">Records imported from TallyPrime</p>
               <p className="text-xs text-muted-foreground">
                 {selectedCompany} &middot; {formatDateDisplay(fromDate)} to{" "}
                 {formatDateDisplay(toDate)}
@@ -154,11 +151,7 @@ export function TallyConnect({ onFileReady, importedCount }: TallyConnectProps) 
           <p className="text-xs text-muted-foreground">
             Connects directly to TallyPrime running on your machine (default: localhost:9000).
           </p>
-          <Button
-            onClick={handleConnect}
-            disabled={isConnecting}
-            className="w-full gap-2"
-          >
+          <Button onClick={handleConnect} disabled={isConnecting} className="w-full gap-2">
             {isConnecting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -186,9 +179,7 @@ export function TallyConnect({ onFileReady, importedCount }: TallyConnectProps) 
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {companies.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>

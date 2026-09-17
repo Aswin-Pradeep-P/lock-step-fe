@@ -81,9 +81,14 @@ export async function checkTallyConnection(): Promise<TallyConnectionResult> {
 
 export async function fetchTallyPurchaseRegister(
   company: string,
-  fromDate: string,
-  toDate: string,
+  fromDate?: string,
+  toDate?: string,
 ): Promise<TallyPurchaseResult> {
+  const dateFilter =
+    fromDate && toDate
+      ? `<SVFROMDATE>${fromDate}</SVFROMDATE>\n          <SVTODATE>${toDate}</SVTODATE>`
+      : "";
+
   const xml = `<ENVELOPE>
   <HEADER>
     <TALLYREQUEST>Export Data</TALLYREQUEST>
@@ -93,8 +98,7 @@ export async function fetchTallyPurchaseRegister(
       <REQUESTDESC>
         <STATICVARIABLES>
           <SVCURRENTCOMPANY>${company}</SVCURRENTCOMPANY>
-          <SVFROMDATE>${fromDate}</SVFROMDATE>
-          <SVTODATE>${toDate}</SVTODATE>
+          ${dateFilter}
         </STATICVARIABLES>
         <REPORTNAME>Day Book</REPORTNAME>
       </REQUESTDESC>

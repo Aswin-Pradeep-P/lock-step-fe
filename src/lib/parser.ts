@@ -3,11 +3,9 @@ import Papa from "papaparse";
 /** A best-effort preview of the first few rows, for the upload screen only — the
  * authoritative parse (column resolution, multi-row headers, everything) happens
  * server-side in lock-step-be once the raw file is uploaded. CSV only: an Excel
- * preview would need to reimplement the same header-detection logic the backend
- * already owns, just to throw the result away once the real upload runs. */
-export async function getCsvPreviewRows(file: File): Promise<Record<string, unknown>[]> {
+ * preview would need a client-side xlsx dependency the app does not ship. */
+export async function getPreviewRows(file: File): Promise<Record<string, unknown>[]> {
   if (!file.name.toLowerCase().endsWith(".csv")) return [];
-
   const text = await file.text();
   return new Promise((resolve, reject) => {
     Papa.parse(text, {
@@ -19,6 +17,8 @@ export async function getCsvPreviewRows(file: File): Promise<Record<string, unkn
     });
   });
 }
+
+export const getCsvPreviewRows = getPreviewRows;
 
 /** Parse all rows from a CSV (not just preview). */
 function parseCsvFull(text: string): Promise<Record<string, unknown>[]> {
@@ -81,7 +81,7 @@ export async function getMultiFilePreviewRows(
 ): Promise<Record<string, unknown>[]> {
   const allPreviews: Record<string, unknown>[] = [];
   for (const file of files) {
-    const rows = await getCsvPreviewRows(file);
+    const rows = await getPreviewRows(file);
     allPreviews.push(...rows);
   }
   return allPreviews.slice(0, 10);

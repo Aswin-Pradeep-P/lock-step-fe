@@ -115,19 +115,83 @@ export async function createCheck(
   return request<Check>(`/periods/${periodId}/checks`, { method: "POST", body: form });
 }
 
-/** GSTR-2B side is fetched live by the client's own GSTIN instead of uploaded.
- * Backend currently serves this from a fixed sandbox sample (no live GSP
- * subscription configured yet) — see lockstep.services.gsp.StubGSPClient. */
+/** GSTR-2B side is fetched by the client's GSTIN instead of uploaded.
+ * Backend stub returns inconsistent or corrected GSTN-shaped data — see
+ * lockstep.services.mock_gstr2b. */
 export async function createCheckFromGsp(
   periodId: string,
   ledgerFile: File | null,
+  variant: "inconsistent" | "corrected" = "corrected",
 ): Promise<Check> {
   const form = new FormData();
   if (ledgerFile) form.set("ledger_file", ledgerFile);
-  return request<Check>(`/periods/${periodId}/checks/gsp-fetch`, {
-    method: "POST",
-    body: form,
-  });
+  return request<Check>(
+    `/periods/${periodId}/checks/gsp-fetch?variant=${variant}`,
+    { method: "POST", body: form },
+  );
+}
+
+export type Gstr2bVariant = "inconsistent" | "corrected";
+
+export interface Gstr2bDefects {
+  exact: number;
+  clerical: number;
+  amount_mismatch: number;
+  missing_in_2b: number;
+  itc_ineligible: number;
+}
+
+export interface Gstr2bFetchResult {
+  variant: Gstr2bVariant;
+  count: number;
+  defects: Gstr2bDefects;
+  data: Record<string, unknown>;
+}
+
+export async function fetchGstr2b(variant: Gstr2bVariant): Promise<Gstr2bFetchResult> {
+  return request<Gstr2bFetchResult>(`/gstr2b?variant=${variant}`);
+}
+
+export function flattenGstr2bPreview(
+  payload: Record<string, unknown>,
+): Record<string, unknown>[] {
+  const envelope = payload as {
+    data?: { data?: { data?: { docdata?: { b2b?: GstnB2BParty[] } } } };
+  };
+  const vendors = envelope.data?.data?.data?.docdata?.b2b ?? [];
+  const rows: Record<string, unknown>[] = [];
+  for (const vendor of vendors) {
+    for (const inv of vendor.inv ?? []) {
+      rows.push({
+        gstin: vendor.ctin ?? "",
+        tradeName: vendor.trdnm ?? "",
+        invoiceNo: inv.inum ?? "",
+        invoiceDate: inv.dt ?? "",
+        taxableValue: inv.txval ?? 0,
+        igst: inv.igst ?? 0,
+        cgst: inv.cgst ?? 0,
+        sgst: inv.sgst ?? 0,
+        itc: inv.itcavl ?? "",
+        reason: inv.rsn ?? "",
+      });
+    }
+  }
+  return rows;
+}
+
+interface GstnB2BParty {
+  ctin?: string;
+  trdnm?: string;
+  inv?: Array<{
+    inum?: string;
+    dt?: string;
+    txval?: number;
+    igst?: number;
+    cgst?: number;
+    sgst?: number;
+    itcavl?: string;
+    rsn?: string;
+  }>;
 }
 
 // --- Invoices -----------------------------------------------------------------------
