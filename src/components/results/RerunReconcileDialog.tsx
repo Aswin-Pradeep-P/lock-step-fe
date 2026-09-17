@@ -67,8 +67,9 @@ export function RerunReconcileDialog({
           : await createCheck(periodId, ledgerFile, gstr2bFile);
       toast.success("Reconciliation re-run complete.");
       onOpenChange(false);
-      onSuccess();
+      // Navigate before refresh so `load` reads the new checkId from the URL.
       navigate(`/reconcile/${periodId}/${check.id}`);
+      onSuccess();
     } catch (err) {
       toast.error(friendlyError(err, { fallback: "Couldn't re-run the reconciliation. Please try again." }));
     } finally {

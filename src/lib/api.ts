@@ -97,8 +97,14 @@ export async function createPeriod(
   });
 }
 
-export async function fetchHeadline(periodId: string): Promise<Headline> {
-  return request<Headline>(`/periods/${periodId}/headline`);
+export async function fetchHeadline(
+  periodId: string,
+  opts?: { checkId?: string },
+): Promise<Headline> {
+  const params = new URLSearchParams();
+  if (opts?.checkId) params.set("check_id", opts.checkId);
+  const qs = params.toString();
+  return request<Headline>(`/periods/${periodId}/headline${qs ? `?${qs}` : ""}`);
 }
 
 export async function fetchChecks(periodId: string): Promise<Check[]> {
