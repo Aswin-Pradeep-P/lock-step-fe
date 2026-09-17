@@ -41,7 +41,7 @@ export default function ReconciliationResults() {
     if (!periodId) return;
     try {
       const [headlineData, invoiceData] = await Promise.all([
-        fetchHeadline(periodId),
+        fetchHeadline(periodId, { checkId }),
         fetchInvoices(periodId, { checkId }),
       ]);
       setHeadline(headlineData);
@@ -227,6 +227,18 @@ export default function ReconciliationResults() {
             <div>
               <div className="text-xs text-muted-foreground">Invoices at risk</div>
               <div className="text-xl font-bold">{exposure.count}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Invoices corrected</div>
+              <div className="text-xl font-bold text-risk-low">
+                {headline.invoices_corrected}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Tax credit saved</div>
+              <div className="text-xl font-bold text-risk-low">
+                {formatCurrency(Number(headline.tax_credit_saved))}
+              </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Vendors not filed</div>

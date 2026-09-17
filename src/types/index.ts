@@ -62,6 +62,8 @@ export interface Headline {
   vendors_not_filed: number;
   checks_run: number;
   status_counts: Record<InvoiceMatchStatus, number>;
+  invoices_corrected: number;
+  tax_credit_saved: string;
 }
 
 export interface InvoiceSide {
