@@ -75,7 +75,7 @@ export function FileUploader({
   );
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2">
       {files.length > 0 && (
         <div className="space-y-1.5">
           {files.map((file, idx) => (
@@ -110,7 +110,7 @@ export function FileUploader({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         className={cn(
-          "relative rounded-lg border-2 border-dashed transition-colors cursor-pointer",
+          "relative flex flex-1 flex-col items-center justify-center rounded-lg border-2 border-dashed transition-colors cursor-pointer",
           files.length > 0 ? "p-4" : "p-6",
           isDragging
             ? "border-primary bg-primary/5"

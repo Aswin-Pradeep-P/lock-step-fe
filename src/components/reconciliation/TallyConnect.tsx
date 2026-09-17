@@ -103,7 +103,7 @@ export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyCon
 
   if (importedCount !== null && importedCount > 0) {
     return (
-      <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-6">
+      <div className="flex flex-1 flex-col justify-center rounded-lg border-2 border-primary/20 bg-primary/5 p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-primary/10 p-2">
@@ -133,7 +133,7 @@ export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyCon
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-1 flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isConnected ? (
@@ -152,14 +152,11 @@ export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyCon
       </div>
 
       {!isConnected ? (
-        <div className="rounded-lg border-2 border-dashed border-muted-foreground/25 p-6 space-y-4">
+        <div className="flex flex-1 flex-col justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 p-6 space-y-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Server className="h-4 w-4" />
             Connect to TallyPrime
           </div>
-          <p className="text-xs text-muted-foreground">
-            Connects directly to TallyPrime running on your machine (default: localhost:9000).
-          </p>
           <Button onClick={handleConnect} disabled={isConnecting} className="w-full gap-2">
             {isConnecting ? (
               <>
@@ -175,7 +172,7 @@ export function TallyConnect({ onFileReady, importedCount, onCleared }: TallyCon
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-5 space-y-4">
+        <div className="flex flex-1 flex-col justify-center rounded-lg border-2 border-primary/20 bg-primary/5 p-5 space-y-4">
           <div className="space-y-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1.5">

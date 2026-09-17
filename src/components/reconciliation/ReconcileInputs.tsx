@@ -274,31 +274,16 @@ function SourceTabs({
   );
 }
 
-/** Section wrapper: a Card in grid layout, a plain titled block when stacked. */
-function Section({
-  title,
-  asCard,
-  children,
-}: {
-  title: string;
-  asCard: boolean;
-  children: React.ReactNode;
-}) {
-  if (asCard) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">{title}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">{children}</CardContent>
-      </Card>
-    );
-  }
+/** Section wrapper: each upload section is its own Card, in both the page (grid) and
+ *  the Re-run modal (stacked) — only the outer container differs. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-3">
-      <h4 className="text-sm font-semibold">{title}</h4>
-      {children}
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -307,18 +292,16 @@ export function ReconcileInputs({
   layout = "grid",
   showHint = true,
 }: ReconcileInputsProps) {
-  const asCard = layout === "grid";
-  // In the grid layout each control (dropzone, Tally form, GSP box) lives in a
-  // constant-height area, so switching the Upload/Fetch tabs never resizes the card
-  // (no layout jump). Content is top-aligned rather than centred: a short populated
-  // state (a file chip, the "imported" summary) then sits naturally under the tabs
-  // with a little breathing room below, instead of floating in a large void. 170px
-  // clears the compact states; the taller Tally connect form expands its own card,
-  // which reads as opening a control rather than as a jump.
-  const bodyGrow = asCard ? "flex flex-col min-h-[170px]" : "";
+  // Each control (dropzone, Tally form, GSP box) lives in a constant-height area, so
+  // switching the Upload/Fetch/Tally tabs never resizes the card (no layout jump).
+  // 190px clears the tallest control (the Tally connect box) so every tab within a
+  // card is the same height. `[&>*]:flex-1` stretches whichever control is showing to
+  // fill that height, so the dashed boxes are all the same size and only the padding
+  // around their content differs between views.
+  const bodyGrow = "flex flex-col min-h-[190px] [&>*]:flex-1";
 
   const ledgerSection = (
-    <Section title="Purchase Register" asCard={asCard}>
+    <Section title="Purchase Register">
       <SourceTabs
         value={c.ledgerSource}
         onChange={(k) => c.setLedgerSource(k as LedgerSource)}
@@ -349,7 +332,7 @@ export function ReconcileInputs({
   );
 
   const gstr2bSection = (
-    <Section title="GSTR-2B Data" asCard={asCard}>
+    <Section title="GSTR-2B Data">
       <SourceTabs
         value={c.gstr2bSource}
         onChange={(k) => c.switchGstr2bSource(k as Gstr2bSource)}
@@ -369,7 +352,7 @@ export function ReconcileInputs({
             onFilesChange={c.handleGstr2bFilesChange}
           />
         ) : c.gspCount !== null && c.gspCount > 0 ? (
-          <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-5">
+          <div className="flex flex-col justify-center rounded-lg border-2 border-primary/20 bg-primary/5 p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">
@@ -393,7 +376,7 @@ export function ReconcileInputs({
             </div>
           </div>
         ) : (
-          <div className="rounded-lg border-2 border-dashed border-muted-foreground/25 p-5 space-y-4">
+          <div className="flex flex-col justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 p-6 space-y-4">
             <div className="flex items-start gap-3">
               <div className="rounded-full bg-muted p-2 shrink-0">
                 <Globe className="h-5 w-5 text-muted-foreground" />
@@ -403,8 +386,7 @@ export function ReconcileInputs({
                   Fetched by your GSTIN for this tax period
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  No file needed — we retrieve your GSTR-2B directly from the GST
-                  portal for this period.
+                  No file needed — fetched directly from the GST portal.
                 </p>
               </div>
             </div>
@@ -439,11 +421,8 @@ export function ReconcileInputs({
           {gstr2bSection}
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {ledgerSection}
-          {/* A minimal hairline keeps the two stacked sections visually distinct
-              without the visual weight of a full card each. */}
-          <div className="border-t border-border" />
           {gstr2bSection}
         </div>
       )}

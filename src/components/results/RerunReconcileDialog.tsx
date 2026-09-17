@@ -76,15 +76,21 @@ export function RerunReconcileDialog({
     }
   };
 
-  const canReconcile = (inputs.hasLedger || inputs.hasGstr2b) && !isReconciling;
+  // Enable only once something is actually staged — a ledger (upload/Tally), an
+  // uploaded 2B, or a completed GSP fetch. Merely having the (default) Fetch tab
+  // selected is not enough, so re-run can't fire with nothing provided.
+  const hasGstr2bData =
+    inputs.gstr2bFiles.length > 0 ||
+    (inputs.gstr2bSource === "gsp" && (inputs.gspCount ?? 0) > 0);
+  const canReconcile = (inputs.hasLedger || hasGstr2bData) && !isReconciling;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Re-run Reconciliation</DialogTitle>
           <DialogDescription>
-            Upload updated files to re-run this period. Provide at least one file to
+            Re-run this period with updated data — upload a file or fetch GSTR-2B to
             continue.
           </DialogDescription>
         </DialogHeader>
@@ -100,7 +106,7 @@ export function RerunReconcileDialog({
             </span>
           </div>
 
-          <ReconcileInputs controller={inputs} layout="stacked" showHint={false} />
+          <ReconcileInputs controller={inputs} layout="grid" showHint={false} />
         </div>
 
         <DialogFooter>
