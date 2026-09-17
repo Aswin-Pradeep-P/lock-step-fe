@@ -103,6 +103,10 @@ export interface Invoice {
   supplier_filed_at: string | null;
   description: string | null;
 
+  // Populated lazily by GET /invoices/{id}/insight and cached from then on.
+  ai_reason_md: string | null;
+  ai_suggestion_md: string | null;
+
   recoverable_until: string | null;
   days_to_recover: number | null;
   window_open: boolean | null;
@@ -176,6 +180,14 @@ export interface InvoiceAction {
   amount_at_risk: string | null;
   payload: Record<string, unknown> | null;
   created_at: string;
+}
+
+/** AI-authored reason + suggested next step for one invoice — generated on first
+ * request and cached server-side, never a replacement for the deterministic
+ * `match_reason`. Markdown; render it, don't inject it as HTML. */
+export interface InvoiceInsight {
+  reason_md: string;
+  suggestion_md: string;
 }
 
 // --- Frontend-only derived concepts (not backend fields) ------------------------

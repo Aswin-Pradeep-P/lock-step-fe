@@ -7,6 +7,7 @@ import type {
   Headline,
   Invoice,
   InvoiceAction,
+  InvoiceInsight,
   Period,
   VendorDetail,
   VendorEmailDraft,
@@ -263,6 +264,12 @@ export async function fetchActionProposal(invoiceId: string): Promise<ActionProp
 
 export async function fetchInvoiceActions(invoiceId: string): Promise<InvoiceAction[]> {
   return request<InvoiceAction[]>(`/invoices/${invoiceId}/actions`);
+}
+
+/** Generated on first call and cached server-side — safe to call every time an
+ * invoice row is expanded. */
+export async function fetchInvoiceInsight(invoiceId: string): Promise<InvoiceInsight> {
+  return request<InvoiceInsight>(`/invoices/${invoiceId}/insight`);
 }
 
 export async function createInvoiceAction(

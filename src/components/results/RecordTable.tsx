@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, Fragment } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   Table,
   TableBody,
@@ -20,7 +21,12 @@ import { NudgeVendorModal } from "@/components/results/NudgeVendorModal";
 import { ActivityTimeline } from "@/components/results/ActivityTimeline";
 import { formatCurrency } from "@/lib/utils";
 import { STATUS_LABEL, bucketOf, reasonTag, canNudgeVendor, formatMatchReason } from "@/lib/risk";
-import { createInvoiceAction, fetchActionProposal, fetchInvoiceActions } from "@/lib/api";
+import {
+  createInvoiceAction,
+  fetchActionProposal,
+  fetchInvoiceActions,
+  fetchInvoiceInsight,
+} from "@/lib/api";
 import {
   MoreHorizontal,
   ArrowUpDown,
@@ -32,8 +38,9 @@ import {
   ShieldOff,
   AlertTriangle,
   Flag,
+  Sparkles,
 } from "lucide-react";
-import type { Invoice, RiskBucket, ActionProposal, InvoiceAction } from "@/types";
+import type { Invoice, RiskBucket, ActionProposal, InvoiceAction, InvoiceInsight } from "@/types";
 
 interface RecordTableProps {
   invoices: Invoice[];
@@ -70,6 +77,8 @@ export function RecordTable({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [proposals, setProposals] = useState<Record<string, ActionProposal>>({});
   const [actions, setActions] = useState<Record<string, InvoiceAction[]>>({});
+  const [insights, setInsights] = useState<Record<string, InvoiceInsight>>({});
+  const [insightLoading, setInsightLoading] = useState<string | null>(null);
 
   useEffect(() => {
     setPage(0);
@@ -91,6 +100,17 @@ export function RecordTable({
       .then((a) => setActions((prev) => ({ ...prev, [expandedRow]: a })))
       .catch(() => {});
   }, [expandedRow, actions]);
+
+  useEffect(() => {
+    if (!expandedRow || insights[expandedRow]) return;
+    setInsightLoading(expandedRow);
+    fetchInvoiceInsight(expandedRow)
+      .then((i) => setInsights((prev) => ({ ...prev, [expandedRow]: i })))
+      .catch(() => {
+        // AI insight is a courtesy layer — a failed fetch just leaves it blank.
+      })
+      .finally(() => setInsightLoading((current) => (current === expandedRow ? null : current)));
+  }, [expandedRow, insights]);
 
   /** Re-fetch actions for an invoice without clearing existing data (avoids flicker). */
   const refreshActions = useCallback((invoiceId: string) => {
@@ -388,6 +408,38 @@ export function RecordTable({
                                 <p className="text-xs text-muted-foreground mt-1">
                                   Description: {invoice.description}
                                 </p>
+                              )}
+                            </div>
+
+                            <div className="rounded-lg border bg-background p-3 space-y-2">
+                              <div className="text-sm font-medium flex items-center gap-1.5">
+                                <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+                                AI Insight
+                                <span className="text-xs font-normal text-muted-foreground">
+                                  — verify independently
+                                </span>
+                              </div>
+                              {insightLoading === invoice.id && !insights[invoice.id] ? (
+                                <p className="text-xs text-muted-foreground">Thinking…</p>
+                              ) : insights[invoice.id] ? (
+                                <div className="space-y-2 text-sm [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-4 [&_strong]:font-semibold">
+                                  <div>
+                                    <div className="text-xs font-medium text-muted-foreground mb-0.5">
+                                      Reason
+                                    </div>
+                                    <ReactMarkdown>{insights[invoice.id].reason_md}</ReactMarkdown>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs font-medium text-muted-foreground mb-0.5">
+                                      Suggested Action
+                                    </div>
+                                    <ReactMarkdown>
+                                      {insights[invoice.id].suggestion_md}
+                                    </ReactMarkdown>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">Unavailable.</p>
                               )}
                             </div>
 
