@@ -47,8 +47,14 @@ export function RecentRuns({ runs }: RecentRunsProps) {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg">Recent Reconciliation Runs</CardTitle>
+        <button
+          onClick={() => navigate("/logs")}
+          className="text-xs font-medium text-primary hover:underline"
+        >
+          View all
+        </button>
       </CardHeader>
       <CardContent>
         <Table>

@@ -2,7 +2,6 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  FilePlus,
   ScrollText,
   Building2,
   Shield,
@@ -26,9 +25,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "New Reconciliation", href: "/reconcile", icon: FilePlus },
-  { label: "Reconciliation Logs", href: "/logs", icon: ScrollText, comingSoon: true },
-  { label: "Vendor Bank", href: "/vendors", icon: Building2, comingSoon: true },
+  { label: "Reconciliation Logs", href: "/logs", icon: ScrollText },
+  { label: "Vendors", href: "/vendors", icon: Building2 },
 ];
 
 interface SidebarProps {

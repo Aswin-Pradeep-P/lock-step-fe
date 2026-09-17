@@ -54,7 +54,7 @@ export default function Dashboard() {
         allRuns.sort(
           (a, b) => new Date(b.check.created_at).getTime() - new Date(a.check.created_at).getTime(),
         );
-        const recent = allRuns.slice(0, 10);
+        const recent = allRuns.slice(0, 5);
         const withInvoices: RunRow[] = await Promise.all(
           recent.map(async (run) => ({
             ...run,

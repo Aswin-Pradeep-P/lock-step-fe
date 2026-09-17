@@ -3,6 +3,8 @@ import { Layout } from "@/components/layout/Layout";
 import Dashboard from "@/pages/Dashboard";
 import NewReconciliation from "@/pages/NewReconciliation";
 import ReconciliationResults from "@/pages/ReconciliationResults";
+import ReconciliationLogs from "@/pages/ReconciliationLogs";
+import Vendors from "@/pages/Vendors";
 import Login from "@/pages/Login";
 import { isAuthenticated } from "@/lib/auth";
 import { ToastProvider } from "@/components/ui/toast";
@@ -40,6 +42,8 @@ export default function App() {
           }
         >
           <Route path="/" element={<Dashboard />} />
+          <Route path="/logs" element={<ReconciliationLogs />} />
+          <Route path="/vendors" element={<Vendors />} />
           <Route path="/reconcile" element={<NewReconciliation />} />
           <Route path="/reconcile/:periodId" element={<ReconciliationResults />} />
           <Route path="/reconcile/:periodId/:checkId" element={<ReconciliationResults />} />

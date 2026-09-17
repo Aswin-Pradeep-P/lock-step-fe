@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -43,6 +44,7 @@ function riskLabel(band: VendorRisk["risk_band"]) {
 }
 
 export function VendorRiskList({ vendors }: VendorRiskListProps) {
+  const navigate = useNavigate();
   const sorted = [...vendors].sort(
     (a, b) => Number(b.current_exposure) - Number(a.current_exposure),
   );
@@ -65,8 +67,14 @@ export function VendorRiskList({ vendors }: VendorRiskListProps) {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg">Vendor Risk</CardTitle>
+        <button
+          onClick={() => navigate("/vendors")}
+          className="text-xs font-medium text-primary hover:underline"
+        >
+          View all
+        </button>
       </CardHeader>
       <CardContent>
         <Table>
@@ -80,7 +88,7 @@ export function VendorRiskList({ vendors }: VendorRiskListProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sorted.slice(0, 10).map((vendor) => (
+            {sorted.slice(0, 5).map((vendor) => (
               <TableRow key={vendor.vendor_id}>
                 <TableCell className="font-medium">{vendor.name}</TableCell>
                 <TableCell className="font-mono text-xs">
