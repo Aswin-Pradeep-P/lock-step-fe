@@ -100,18 +100,25 @@ export function RecordTable({
       .catch(() => {});
   }, [expandedRow, actions]);
 
+  /** Re-fetch actions for an invoice without clearing existing data (avoids flicker). */
+  const refreshActions = useCallback((invoiceId: string) => {
+    fetchInvoiceActions(invoiceId)
+      .then((a) => setActions((prev) => ({ ...prev, [invoiceId]: a })))
+      .catch(() => {});
+  }, []);
+
   const handleResolve = useCallback(
     async (invoice: Invoice) => {
       setActionLoading(invoice.id);
       try {
         await createInvoiceAction(invoice.id, "MARKED_RESOLVED");
         onInvoiceUpdate();
-        setActions((prev) => ({ ...prev, [invoice.id]: undefined as unknown as InvoiceAction[] }));
+        refreshActions(invoice.id);
       } finally {
         setActionLoading(null);
       }
     },
-    [onInvoiceUpdate],
+    [onInvoiceUpdate, refreshActions],
   );
 
   const handleEscalate = useCallback(
@@ -120,12 +127,12 @@ export function RecordTable({
       try {
         await createInvoiceAction(invoice.id, "PAYMENT_HOLD_PROPOSED");
         onInvoiceUpdate();
-        setActions((prev) => ({ ...prev, [invoice.id]: undefined as unknown as InvoiceAction[] }));
+        refreshActions(invoice.id);
       } finally {
         setActionLoading(null);
       }
     },
-    [onInvoiceUpdate],
+    [onInvoiceUpdate, refreshActions],
   );
 
   const handleFlag = useCallback(
@@ -134,12 +141,12 @@ export function RecordTable({
       try {
         await createInvoiceAction(invoice.id, "IGNORED");
         onInvoiceUpdate();
-        setActions((prev) => ({ ...prev, [invoice.id]: undefined as unknown as InvoiceAction[] }));
+        refreshActions(invoice.id);
       } finally {
         setActionLoading(null);
       }
     },
-    [onInvoiceUpdate],
+    [onInvoiceUpdate, refreshActions],
   );
 
   const filtered = useMemo(() => {
