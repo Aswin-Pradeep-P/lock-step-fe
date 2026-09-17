@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { FileUploader } from "@/components/reconciliation/FileUploader";
 import { FilePreview } from "@/components/reconciliation/FilePreview";
@@ -28,8 +28,6 @@ import {
   Upload,
   Globe,
   Server,
-  AlertTriangle,
-  CheckCheck,
   Download,
   CalendarCheck,
 } from "lucide-react";
@@ -117,12 +115,14 @@ function inferDateRange(rows: Record<string, unknown>[]): DateRange | null {
 
 export default function NewReconciliation() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const prefill = (location.state as { taxPeriod?: string; periodId?: string } | null) ?? null;
   const [clientId, setClientId] = useState<string | null>(null);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [setupName, setSetupName] = useState("");
   const [setupGstin, setSetupGstin] = useState("");
   const [periods, setPeriods] = useState<Period[]>([]);
-  const [taxPeriod, setTaxPeriod] = useState(currentTaxPeriod());
+  const [taxPeriod, setTaxPeriod] = useState(prefill?.taxPeriod ?? currentTaxPeriod());
   const [inferredRange, setInferredRange] = useState<DateRange | null>(null);
   const [loadingContext, setLoadingContext] = useState(true);
 
@@ -132,7 +132,7 @@ export default function NewReconciliation() {
 
   const [gstr2bFiles, setGstr2bFiles] = useState<File[]>([]);
   const [gstr2bSource, setGstr2bSource] = useState<Gstr2bSource>("upload");
-  const [gstr2bVariant, setGstr2bVariant] = useState<Gstr2bVariant>("corrected");
+  const gstr2bVariant: Gstr2bVariant = "inconsistent";
   const [ledgerPreview, setLedgerPreview] = useState<Record<string, unknown>[]>([]);
   const [gstr2bPreview, setGstr2bPreview] = useState<Record<string, unknown>[]>([]);
   const [gspPreview, setGspPreview] = useState<Record<string, unknown>[]>([]);
@@ -145,8 +145,13 @@ export default function NewReconciliation() {
   const loadPeriodsFor = useCallback(async (id: string) => {
     const existingPeriods = await fetchPeriods(id);
     setPeriods(existingPeriods);
-    if (existingPeriods.length > 0) setTaxPeriod(existingPeriods[0].tax_period);
-  }, []);
+    // Prefer a prefilled period from Re-reconcile; otherwise fall back to the latest.
+    if (prefill?.taxPeriod) {
+      setTaxPeriod(prefill.taxPeriod);
+    } else if (existingPeriods.length > 0) {
+      setTaxPeriod(existingPeriods[0].tax_period);
+    }
+  }, [prefill?.taxPeriod]);
 
   useEffect(() => {
     async function loadContext() {
@@ -465,9 +470,9 @@ export default function NewReconciliation() {
                       {gspCount} invoices imported from GSTR-2B
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {gstr2bVariant === "corrected" ? "Corrected dataset" : "Inconsistent dataset"}
+                      Fetched from GST Portal
                     </p>
-                    {gspDefects && gstr2bVariant === "inconsistent" && (
+                    {gspDefects && (
                       <p className="text-xs text-muted-foreground mt-1">
                         {gspDefects.exact} matched · {gspDefects.clerical} typos ·{" "}
                         {gspDefects.amount_mismatch} tax diffs ·{" "}
@@ -498,41 +503,9 @@ export default function NewReconciliation() {
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       No file needed — GSTR-2B comes from a GSP (GST Suvidha
-                      Provider) API call instead of a manual download. This
-                      deployment isn't connected to a live GSP subscription yet, so
-                      it currently returns a sandbox sample rather than your real
-                      data. Use Corrected for the as-filed sample, or Inconsistent
-                      to demo mismatches.
+                      Provider) API call instead of a manual download.
                     </p>
                   </div>
-                </div>
-                <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
-                  <button
-                    type="button"
-                    onClick={() => setGstr2bVariant("corrected")}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                      gstr2bVariant === "corrected"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <CheckCheck className="h-3.5 w-3.5" />
-                    Corrected
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGstr2bVariant("inconsistent")}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                      gstr2bVariant === "inconsistent"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    Inconsistent
-                  </button>
                 </div>
                 <Button
                   onClick={() => handleFetchGsp()}

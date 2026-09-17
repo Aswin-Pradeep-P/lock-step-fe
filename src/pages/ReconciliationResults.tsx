@@ -1,19 +1,23 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Header } from "@/components/layout/Header";
 import { SummaryCards } from "@/components/results/SummaryCards";
 import { RecordTable } from "@/components/results/RecordTable";
 import { DownloadButton } from "@/components/results/DownloadButton";
+import { BulkNudgeDialog, groupNudgeableVendors } from "@/components/results/BulkNudgeDialog";
+import { RerunReconcileDialog } from "@/components/results/RerunReconcileDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { fetchHeadline, fetchInvoices, fetchVendorDetail } from "@/lib/api";
-import { BUCKET_LABEL, bucketOf } from "@/lib/risk";
-import type { Headline, Invoice, RiskBucket, VendorDetail } from "@/types";
-import { Loader2, Search, X, ArrowLeft, Sparkles } from "lucide-react";
+import { BUCKET_LABEL, STATUS_LABEL, bucketOf } from "@/lib/risk";
+import type { Headline, Invoice, InvoiceMatchStatus, RiskBucket, VendorDetail } from "@/types";
+import { Loader2, Search, X, ArrowLeft, Sparkles, RefreshCw, Send } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { formatMatchReason } from "@/lib/risk";
+
+const ALL_STATUSES = Object.keys(STATUS_LABEL) as InvoiceMatchStatus[];
 
 export default function ReconciliationResults() {
   const { periodId, checkId } = useParams<{ periodId: string; checkId?: string }>();
@@ -24,7 +28,12 @@ export default function ReconciliationResults() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<RiskBucket | null>(null);
+  const [statusFilters, setStatusFilters] = useState<Set<InvoiceMatchStatus>>(new Set());
+  const [minAmount, setMinAmount] = useState("");
+  const [maxAmount, setMaxAmount] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [rerunOpen, setRerunOpen] = useState(false);
+  const [bulkNudgeOpen, setBulkNudgeOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!periodId) return;
@@ -42,7 +51,7 @@ export default function ReconciliationResults() {
             .filter((i) => bucketOf(i.status) !== "safe" && i.vendor_id)
             .map((i) => i.vendor_id as string),
         ),
-      ].slice(0, 10); // one AI call per vendor server-side — keep this bounded
+      ].slice(0, 10);
       const summaries = await Promise.all(
         affectedVendorIds.map((id) =>
           fetchVendorDetail(id, { periodId, includeSummary: true }).catch(() => null),
@@ -62,7 +71,59 @@ export default function ReconciliationResults() {
 
   const handleFilterToggle = (bucket: RiskBucket) => {
     setActiveFilter(activeFilter === bucket ? null : bucket);
+    // Risk bucket and status multi-select are mutually clarifying — clear statuses when bucket changes.
+    setStatusFilters(new Set());
   };
+
+  const toggleStatus = (status: InvoiceMatchStatus) => {
+    setActiveFilter(null);
+    setStatusFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setActiveFilter(null);
+    setStatusFilters(new Set());
+    setMinAmount("");
+    setMaxAmount("");
+    setSearchQuery("");
+  };
+
+  const filteredInvoices = useMemo(() => {
+    let result = invoices;
+    if (activeFilter) {
+      result = result.filter((i) => bucketOf(i.status) === activeFilter);
+    }
+    if (statusFilters.size > 0) {
+      result = result.filter((i) => statusFilters.has(i.status));
+    }
+    const min = minAmount.trim() === "" ? null : Number(minAmount);
+    const max = maxAmount.trim() === "" ? null : Number(maxAmount);
+    if (min !== null && !Number.isNaN(min)) {
+      result = result.filter((i) => Number(i.total_tax) >= min);
+    }
+    if (max !== null && !Number.isNaN(max)) {
+      result = result.filter((i) => Number(i.total_tax) <= max);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((i) =>
+        `${i.invoice_number} ${i.vendor_name ?? ""} ${i.vendor_gstin ?? ""} ${i.match_reason ?? ""}`
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+    return result;
+  }, [invoices, activeFilter, statusFilters, minAmount, maxAmount, searchQuery]);
+
+  const hasExtraFilters =
+    statusFilters.size > 0 || minAmount.trim() !== "" || maxAmount.trim() !== "" || searchQuery !== "";
+  const hasAnyFilter = activeFilter !== null || hasExtraFilters;
+  const nudgeableVendorCount = groupNudgeableVendors(filteredInvoices).length;
 
   if (loading) {
     return (
@@ -86,25 +147,43 @@ export default function ReconciliationResults() {
     );
   }
 
-  const filteredCount = (() => {
-    let result = invoices;
-    if (activeFilter) result = result.filter((i) => bucketOf(i.status) === activeFilter);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((i) =>
-        `${i.invoice_number} ${i.vendor_name ?? ""} ${i.vendor_gstin ?? ""}`
-          .toLowerCase()
-          .includes(q),
-      );
-    }
-    return result.length;
-  })();
-
   return (
     <div>
       <Header title="Reconciliation Results">
+        <Button
+          variant="outline"
+          className="gap-2"
+          disabled={nudgeableVendorCount === 0}
+          onClick={() => setBulkNudgeOpen(true)}
+        >
+          <Send className="h-4 w-4" />
+          Bulk Nudge
+        </Button>
+        <Button
+          variant="outline"
+          className="gap-2"
+          onClick={() => setRerunOpen(true)}
+        >
+          <RefreshCw className="h-4 w-4" />
+          Re-run
+        </Button>
         <DownloadButton periodId={periodId!} headline={headline} invoices={invoices} />
       </Header>
+      <RerunReconcileDialog
+        open={rerunOpen}
+        onOpenChange={setRerunOpen}
+        periodId={periodId!}
+        taxPeriod={headline.tax_period}
+        onSuccess={load}
+      />
+      <BulkNudgeDialog
+        open={bulkNudgeOpen}
+        onOpenChange={setBulkNudgeOpen}
+        invoices={filteredInvoices}
+        periodId={periodId!}
+        checkId={checkId}
+        onSent={load}
+      />
 
       <div className="p-6 lg:p-8 space-y-6">
         <div className="flex items-center gap-3 flex-wrap">
@@ -146,34 +225,74 @@ export default function ReconciliationResults() {
           onFilterToggle={handleFilterToggle}
         />
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search invoices, vendors, GSTIN..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search invoices, vendors, GSTIN..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                inputMode="decimal"
+                placeholder="Min tax"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                className="w-28"
+              />
+              <span className="text-xs text-muted-foreground">–</span>
+              <Input
+                type="number"
+                inputMode="decimal"
+                placeholder="Max tax"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                className="w-28"
+              />
+            </div>
+            {hasAnyFilter && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1 text-xs">
+                <X className="h-3.5 w-3.5" />
+                Clear filters
+              </Button>
+            )}
           </div>
 
-          {activeFilter && (
-            <Badge variant="secondary" className="gap-1 pr-1">
-              Showing: {BUCKET_LABEL[activeFilter]} — {filteredCount} records
-              <button
-                onClick={() => setActiveFilter(null)}
-                className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20"
-              >
-                <X className="h-3 w-3" />
-              </button>
+          <div className="flex flex-wrap gap-1.5">
+            {ALL_STATUSES.map((status) => {
+              const active = statusFilters.has(status);
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => toggleStatus(status)}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    active
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-input text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {STATUS_LABEL[status]}
+                </button>
+              );
+            })}
+          </div>
+
+          {hasAnyFilter && (
+            <Badge variant="secondary" className="gap-1">
+              Showing {filteredInvoices.length} of {invoices.length} invoices
+              {activeFilter ? ` · ${BUCKET_LABEL[activeFilter]}` : ""}
             </Badge>
           )}
         </div>
 
         <RecordTable
-          invoices={invoices}
-          filter={activeFilter}
-          searchQuery={searchQuery}
+          invoices={filteredInvoices}
           periodId={periodId!}
           onInvoiceUpdate={load}
         />

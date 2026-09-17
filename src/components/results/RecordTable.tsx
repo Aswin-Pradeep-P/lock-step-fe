@@ -37,8 +37,6 @@ import type { Invoice, RiskBucket, ActionProposal, InvoiceAction } from "@/types
 
 interface RecordTableProps {
   invoices: Invoice[];
-  filter: RiskBucket | null;
-  searchQuery: string;
   periodId: string;
   onInvoiceUpdate: () => void;
 }
@@ -57,16 +55,10 @@ function bucketBadgeVariant(bucket: RiskBucket) {
   }
 }
 
-function searchText(invoice: Invoice): string {
-  return `${invoice.invoice_number} ${invoice.vendor_name ?? ""} ${invoice.vendor_gstin ?? ""} ${invoice.match_reason ?? ""}`.toLowerCase();
-}
-
 const PAGE_SIZE = 10;
 
 export function RecordTable({
   invoices,
-  filter,
-  searchQuery,
   periodId,
   onInvoiceUpdate,
 }: RecordTableProps) {
@@ -82,7 +74,7 @@ export function RecordTable({
   useEffect(() => {
     setPage(0);
     setExpandedRow(null);
-  }, [filter, searchQuery]);
+  }, [invoices]);
 
   useEffect(() => {
     if (!expandedRow || proposals[expandedRow]) return;
@@ -149,18 +141,8 @@ export function RecordTable({
     [onInvoiceUpdate, refreshActions],
   );
 
-  const filtered = useMemo(() => {
-    let result = invoices;
-    if (filter) result = result.filter((i) => bucketOf(i.status) === filter);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((i) => searchText(i).includes(q));
-    }
-    return result;
-  }, [invoices, filter, searchQuery]);
-
   const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
+    return [...invoices].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case "invoice_number":
@@ -178,7 +160,7 @@ export function RecordTable({
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [filtered, sortField, sortDir]);
+  }, [invoices, sortField, sortDir]);
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
   const paged = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);

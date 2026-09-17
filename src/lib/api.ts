@@ -277,4 +277,24 @@ export async function createInvoiceAction(
   });
 }
 
+export interface BulkNudgeResult {
+  nudged_vendors: number;
+  nudged_invoices: number;
+  action_ids: string[];
+}
+
+export async function bulkNudgeVendors(
+  periodId: string,
+  opts: { vendor_ids: string[]; check_id?: string; channel?: string },
+): Promise<BulkNudgeResult> {
+  return request<BulkNudgeResult>(`/periods/${periodId}/actions/bulk-nudge`, {
+    method: "POST",
+    body: JSON.stringify({
+      vendor_ids: opts.vendor_ids,
+      ...(opts.check_id ? { check_id: opts.check_id } : {}),
+      channel: opts.channel ?? "email",
+    }),
+  });
+}
+
 export { ApiError };
