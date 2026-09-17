@@ -70,3 +70,53 @@ export function matchRatePercent(headline: Headline): number {
 export function canNudgeVendor(invoice: Invoice): boolean {
   return invoice.status === "MISSING_IN_GSTR2B" || invoice.status === "AMOUNT_MISMATCH";
 }
+
+/** Highlight key terms in match_reason text — amounts, section references, invoice
+ * numbers, percentages. Returns an array of string | {text, className} segments. */
+export interface RichSegment {
+  text: string;
+  className?: string;
+}
+
+export function formatMatchReason(text: string | null | undefined): RichSegment[] {
+  if (!text) return [];
+
+  const patterns: { regex: RegExp; className: string }[] = [
+    { regex: /(?:Rs\.?\s*|₹\s*|INR\s*)[\d,]+(?:\.\d{1,2})?/gi, className: "font-semibold text-foreground" },
+    { regex: /\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?%/g, className: "font-semibold text-foreground" },
+    { regex: /Sec(?:tion)?\s*\d+(?:\(\d+\))?(?:\([a-z]\))?/gi, className: "font-mono text-xs bg-muted px-1 rounded" },
+    { regex: /[A-Z]{3,5}[-/]\d{4,}[-/]?\d*/g, className: "font-mono" },
+    { regex: /\d{2}[A-Z]{5}\d{4}[A-Z]\d[A-Z\d]{2}/g, className: "font-mono text-xs" },
+  ];
+
+  const segments: RichSegment[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    let earliest: { index: number; length: number; className: string } | null = null;
+
+    for (const { regex, className } of patterns) {
+      regex.lastIndex = 0;
+      const match = regex.exec(remaining);
+      if (match && (!earliest || match.index < earliest.index)) {
+        earliest = { index: match.index, length: match[0].length, className };
+      }
+    }
+
+    if (!earliest) {
+      segments.push({ text: remaining });
+      break;
+    }
+
+    if (earliest.index > 0) {
+      segments.push({ text: remaining.slice(0, earliest.index) });
+    }
+    segments.push({
+      text: remaining.slice(earliest.index, earliest.index + earliest.length),
+      className: earliest.className,
+    });
+    remaining = remaining.slice(earliest.index + earliest.length);
+  }
+
+  return segments;
+}

@@ -17,9 +17,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { NudgeVendorModal } from "@/components/results/NudgeVendorModal";
+import { ActivityTimeline } from "@/components/results/ActivityTimeline";
 import { formatCurrency } from "@/lib/utils";
-import { STATUS_LABEL, bucketOf, reasonTag, canNudgeVendor } from "@/lib/risk";
-import { createInvoiceAction, fetchActionProposal } from "@/lib/api";
+import { STATUS_LABEL, bucketOf, reasonTag, canNudgeVendor, formatMatchReason } from "@/lib/risk";
+import { createInvoiceAction, fetchActionProposal, fetchInvoiceActions } from "@/lib/api";
 import {
   MoreHorizontal,
   ArrowUpDown,
@@ -29,8 +30,10 @@ import {
   ChevronRight,
   Clock,
   ShieldOff,
+  AlertTriangle,
+  Flag,
 } from "lucide-react";
-import type { Invoice, RiskBucket, ActionProposal } from "@/types";
+import type { Invoice, RiskBucket, ActionProposal, InvoiceAction } from "@/types";
 
 interface RecordTableProps {
   invoices: Invoice[];
@@ -74,6 +77,7 @@ export function RecordTable({
   const [nudgeInvoice, setNudgeInvoice] = useState<Invoice | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [proposals, setProposals] = useState<Record<string, ActionProposal>>({});
+  const [actions, setActions] = useState<Record<string, InvoiceAction[]>>({});
 
   useEffect(() => {
     setPage(0);
@@ -89,12 +93,48 @@ export function RecordTable({
       });
   }, [expandedRow, proposals]);
 
+  useEffect(() => {
+    if (!expandedRow || actions[expandedRow]) return;
+    fetchInvoiceActions(expandedRow)
+      .then((a) => setActions((prev) => ({ ...prev, [expandedRow]: a })))
+      .catch(() => {});
+  }, [expandedRow, actions]);
+
   const handleResolve = useCallback(
     async (invoice: Invoice) => {
       setActionLoading(invoice.id);
       try {
         await createInvoiceAction(invoice.id, "MARKED_RESOLVED");
         onInvoiceUpdate();
+        setActions((prev) => ({ ...prev, [invoice.id]: undefined as unknown as InvoiceAction[] }));
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [onInvoiceUpdate],
+  );
+
+  const handleEscalate = useCallback(
+    async (invoice: Invoice) => {
+      setActionLoading(invoice.id);
+      try {
+        await createInvoiceAction(invoice.id, "PAYMENT_HOLD_PROPOSED");
+        onInvoiceUpdate();
+        setActions((prev) => ({ ...prev, [invoice.id]: undefined as unknown as InvoiceAction[] }));
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [onInvoiceUpdate],
+  );
+
+  const handleFlag = useCallback(
+    async (invoice: Invoice) => {
+      setActionLoading(invoice.id);
+      try {
+        await createInvoiceAction(invoice.id, "IGNORED");
+        onInvoiceUpdate();
+        setActions((prev) => ({ ...prev, [invoice.id]: undefined as unknown as InvoiceAction[] }));
       } finally {
         setActionLoading(null);
       }
@@ -166,6 +206,39 @@ export function RecordTable({
     </TableHead>
   );
 
+  /** Derive a left-border color if the invoice has been acted upon. */
+  function rowBorderClass(invoice: Invoice): string {
+    const acts = actions[invoice.id];
+    if (!acts || acts.length === 0) return "";
+    const latest = acts[acts.length - 1].action;
+    if (latest === "PAYMENT_HOLD_PROPOSED" || latest === "PAYMENT_HOLD_APPLIED")
+      return "border-l-4 border-l-risk-critical";
+    if (latest === "IGNORED") return "border-l-4 border-l-yellow-500";
+    if (latest === "VENDOR_NOTIFIED") return "border-l-4 border-l-blue-500";
+    if (latest === "MARKED_RESOLVED") return "border-l-4 border-l-risk-low";
+    return "";
+  }
+
+  /** Small inline icon indicators for the invoice number cell. */
+  function actionIndicators(invoice: Invoice) {
+    const acts = actions[invoice.id];
+    if (!acts || acts.length === 0) return null;
+    const types = new Set(acts.map((a) => a.action));
+    return (
+      <span className="inline-flex gap-0.5 ml-1.5 align-middle">
+        {types.has("PAYMENT_HOLD_PROPOSED") && (
+          <span title="Escalated"><AlertTriangle className="h-3 w-3 text-risk-critical" /></span>
+        )}
+        {types.has("IGNORED") && (
+          <span title="Flagged for review"><Flag className="h-3 w-3 text-yellow-500" /></span>
+        )}
+        {types.has("VENDOR_NOTIFIED") && (
+          <span title="Vendor nudged"><Send className="h-3 w-3 text-blue-500" /></span>
+        )}
+      </span>
+    );
+  }
+
   return (
     <div>
       <div className="rounded-lg border bg-card">
@@ -199,13 +272,14 @@ export function RecordTable({
                 return (
                   <Fragment key={invoice.id}>
                     <TableRow
-                      className="cursor-pointer"
+                      className={`cursor-pointer ${rowBorderClass(invoice)}`}
                       onClick={() =>
                         setExpandedRow(expandedRow === invoice.id ? null : invoice.id)
                       }
                     >
                       <TableCell className="font-mono text-sm">
                         {invoice.invoice_number}
+                        {actionIndicators(invoice)}
                       </TableCell>
                       <TableCell className="text-sm">{invoice.invoice_date ?? "—"}</TableCell>
                       <TableCell className="font-medium text-sm max-w-[160px] truncate">
@@ -272,6 +346,31 @@ export function RecordTable({
                                 Mark Resolved
                               </DropdownMenuItem>
                             )}
+                            {bucketOf(invoice.status) === "high" && invoice.status !== "RESOLVED" && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  disabled={actionLoading === invoice.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFlag(invoice);
+                                  }}
+                                >
+                                  <Flag className="mr-2 h-4 w-4 text-yellow-500" />
+                                  Flag for Review
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  disabled={actionLoading === invoice.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEscalate(invoice);
+                                  }}
+                                >
+                                  <AlertTriangle className="mr-2 h-4 w-4 text-risk-critical" />
+                                  Escalate
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -283,7 +382,13 @@ export function RecordTable({
                             <div>
                               <div className="text-sm font-medium">Reason</div>
                               <p className="text-sm text-muted-foreground leading-relaxed mt-1">
-                                {invoice.match_reason}
+                                {formatMatchReason(invoice.match_reason).map((seg, i) =>
+                                  seg.className ? (
+                                    <span key={i} className={seg.className}>{seg.text}</span>
+                                  ) : (
+                                    <span key={i}>{seg.text}</span>
+                                  ),
+                                )}
                               </p>
                               {tag && (
                                 <Badge variant="secondary" className="mt-2 gap-1">
@@ -345,7 +450,18 @@ export function RecordTable({
                               </div>
                             )}
 
-                            <div className="border-t pt-3 flex gap-2">
+                            {actions[invoice.id] && actions[invoice.id].length > 0 && (
+                              <details className="text-xs">
+                                <summary className="cursor-pointer text-muted-foreground font-medium hover:text-foreground">
+                                  Activity ({actions[invoice.id].length})
+                                </summary>
+                                <div className="mt-2">
+                                  <ActivityTimeline actions={actions[invoice.id]} />
+                                </div>
+                              </details>
+                            )}
+
+                            <div className="border-t pt-3 flex gap-2 flex-wrap">
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -373,6 +489,36 @@ export function RecordTable({
                                   <CheckCircle2 className="h-3 w-3" />
                                   Mark Resolved
                                 </Button>
+                              )}
+                              {bucketOf(invoice.status) === "high" && invoice.status !== "RESOLVED" && (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1.5 text-xs text-yellow-600"
+                                    disabled={actionLoading === invoice.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleFlag(invoice);
+                                    }}
+                                  >
+                                    <Flag className="h-3 w-3" />
+                                    Flag for Review
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1.5 text-xs text-risk-critical"
+                                    disabled={actionLoading === invoice.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEscalate(invoice);
+                                    }}
+                                  >
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Escalate
+                                  </Button>
+                                </>
                               )}
                             </div>
                           </div>

@@ -16,6 +16,11 @@ export default defineConfig({
         target: "http://localhost:8010",
         changeOrigin: true,
       },
+      "/tally": {
+        target: "http://localhost:9000",
+        changeOrigin: true,
+        rewrite: () => "",
+      },
     },
   },
 });

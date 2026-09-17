@@ -13,6 +13,7 @@ import { BUCKET_LABEL, bucketOf } from "@/lib/risk";
 import type { Headline, Invoice, RiskBucket, VendorDetail } from "@/types";
 import { Loader2, Search, X, ArrowLeft, Sparkles } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { formatMatchReason } from "@/lib/risk";
 
 export default function ReconciliationResults() {
   const { periodId, checkId } = useParams<{ periodId: string; checkId?: string }>();
@@ -102,7 +103,7 @@ export default function ReconciliationResults() {
   return (
     <div>
       <Header title="Reconciliation Results">
-        <DownloadButton periodId={periodId!} />
+        <DownloadButton periodId={periodId!} headline={headline} invoices={invoices} />
       </Header>
 
       <div className="p-6 lg:p-8 space-y-6">
@@ -187,7 +188,15 @@ export default function ReconciliationResults() {
               {vendorSummaries.map((v) => (
                 <div key={v.id} className="border-t pt-3 first:border-t-0 first:pt-0">
                   <div className="text-sm font-medium">{v.name}</div>
-                  <p className="text-sm text-muted-foreground mt-1">{v.ai_summary}</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {formatMatchReason(v.ai_summary).map((seg, i) =>
+                      seg.className ? (
+                        <span key={i} className={seg.className}>{seg.text}</span>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      ),
+                    )}
+                  </p>
                 </div>
               ))}
             </CardContent>
