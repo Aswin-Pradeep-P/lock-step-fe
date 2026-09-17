@@ -5,6 +5,8 @@ import NewReconciliation from "@/pages/NewReconciliation";
 import ReconciliationResults from "@/pages/ReconciliationResults";
 import Login from "@/pages/Login";
 import { isAuthenticated } from "@/lib/auth";
+import { ToastProvider } from "@/components/ui/toast";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
 
 function ScrollToTop() {
@@ -24,9 +26,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <ScrollToTop />
-      <Routes>
+    <ToastProvider>
+      <TooltipProvider delayDuration={200} skipDelayDuration={300}>
+        <BrowserRouter>
+          <ScrollToTop />
+          <Routes>
         <Route path="/login" element={<Login />} />
         <Route
           element={
@@ -40,8 +44,10 @@ export default function App() {
           <Route path="/reconcile/:periodId" element={<ReconciliationResults />} />
           <Route path="/reconcile/:periodId/:checkId" element={<ReconciliationResults />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+          </Route>
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ToastProvider>
   );
 }

@@ -111,7 +111,7 @@ export function FileUploader({
         onDragLeave={handleDragLeave}
         className={cn(
           "relative rounded-lg border-2 border-dashed transition-colors cursor-pointer",
-          files.length > 0 ? "p-4" : "p-8",
+          files.length > 0 ? "p-4" : "p-6",
           isDragging
             ? "border-primary bg-primary/5"
             : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50",
