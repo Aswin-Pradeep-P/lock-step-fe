@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { Activity, TrendingUp, AlertTriangle, HandCoins } from "lucide-react";
 import type { Headline, Period, VendorRisk } from "@/types";
-import { matchRatePercent } from "@/lib/risk";
+import { matchRatePercent, riskInvoiceCountFromHeadline } from "@/lib/risk";
 
 interface StatsCardsProps {
   headlines: { period: Period; headline: Headline }[];
@@ -17,8 +17,13 @@ export function StatsCards({ headlines, vendors }: StatsCardsProps) {
           headlines.reduce((sum, h) => sum + matchRatePercent(h.headline), 0) / headlines.length,
         )
       : 0;
+  // Prefer Moderate+High from status_counts so the home dashboard matches SummaryCards
+  // even if an older backend still returns the narrower filing-only at-risk fields.
   const totalAtRisk = headlines.reduce((sum, h) => sum + Number(h.headline.amount_at_risk), 0);
-  const invoicesAtRisk = headlines.reduce((sum, h) => sum + h.headline.invoices_at_risk, 0);
+  const invoicesAtRisk = headlines.reduce(
+    (sum, h) => sum + riskInvoiceCountFromHeadline(h.headline),
+    0,
+  );
   const vendorsAtRisk = vendors.filter((v) => v.risk_band === "HIGH").length;
 
   const stats = [

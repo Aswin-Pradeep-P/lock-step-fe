@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { fetchHeadline, fetchInvoices, fetchVendorDetail } from "@/lib/api";
-import { BUCKET_LABEL, STATUS_LABEL, bucketOf } from "@/lib/risk";
+import { BUCKET_LABEL, STATUS_LABEL, bucketOf, riskExposure } from "@/lib/risk";
 import type { Headline, Invoice, InvoiceMatchStatus, RiskBucket, VendorDetail } from "@/types";
 import { Loader2, Search, X, ArrowLeft, Sparkles, RefreshCw, Send } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
@@ -124,6 +124,8 @@ export default function ReconciliationResults() {
     statusFilters.size > 0 || minAmount.trim() !== "" || maxAmount.trim() !== "" || searchQuery !== "";
   const hasAnyFilter = activeFilter !== null || hasExtraFilters;
   const nudgeableVendorCount = groupNudgeableVendors(filteredInvoices).length;
+  // Same Moderate + High aggregate as SummaryCards — not the narrower BE filing set.
+  const exposure = useMemo(() => riskExposure(invoices), [invoices]);
 
   if (loading) {
     return (
@@ -205,12 +207,12 @@ export default function ReconciliationResults() {
             <div>
               <div className="text-xs text-muted-foreground">ITC at risk</div>
               <div className="text-xl font-bold text-risk-critical">
-                {formatCurrency(Number(headline.amount_at_risk))}
+                {formatCurrency(exposure.amount)}
               </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Invoices at risk</div>
-              <div className="text-xl font-bold">{headline.invoices_at_risk}</div>
+              <div className="text-xl font-bold">{exposure.count}</div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Vendors not filed</div>
