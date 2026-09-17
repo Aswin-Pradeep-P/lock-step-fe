@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getCsvPreviewRows } from "@/lib/parser";
+import { getMultiFilePreviewRows, mergeFiles } from "@/lib/parser";
 import {
   fetchClients,
   createClient,
@@ -18,11 +18,13 @@ import {
   createCheckFromGsp,
 } from "@/lib/api";
 import type { Period } from "@/types";
-import { Loader2, ArrowRight, Upload, Globe, Server, Clock, CalendarCheck } from "lucide-react";
+import { Loader2, ArrowRight, Upload, Globe, Server, CalendarCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type LedgerSource = "tally" | "upload";
-type Gstr2bSource = "upload" | "gsp" | "portal";
+type Gstr2bSource = "upload" | "gsp";
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function currentTaxPeriod(): string {
   const now = new Date();
@@ -33,8 +35,21 @@ function formatTaxPeriod(tp: string): string {
   return `${tp.slice(0, 2)}/${tp.slice(2)}`;
 }
 
-/** Try to infer MMYYYY from date values in CSV preview rows. */
-function inferTaxPeriod(rows: Record<string, unknown>[]): string | null {
+function formatMonthLabel(mmyyyy: string): string {
+  const mm = parseInt(mmyyyy.slice(0, 2));
+  const yyyy = mmyyyy.slice(2);
+  return `${MONTH_NAMES[mm - 1]} ${yyyy}`;
+}
+
+interface DateRange {
+  from: string; // MMYYYY
+  to: string;   // MMYYYY
+  fromDate?: string; // YYYY-MM-DD
+  toDate?: string;   // YYYY-MM-DD
+}
+
+/** Extract all dates from preview rows and return the month range. */
+function inferDateRange(rows: Record<string, unknown>[]): DateRange | null {
   if (rows.length === 0) return null;
 
   const datePatterns = [
@@ -43,7 +58,7 @@ function inferTaxPeriod(rows: Record<string, unknown>[]): string | null {
     /(\d{2})-(\d{2})-(\d{4})/, // DD-MM-YYYY
   ];
 
-  const monthCounts: Record<string, number> = {};
+  const allDates: Date[] = [];
 
   for (const row of rows) {
     for (const val of Object.values(row)) {
@@ -51,28 +66,40 @@ function inferTaxPeriod(rows: Record<string, unknown>[]): string | null {
       for (const pattern of datePatterns) {
         const match = str.match(pattern);
         if (match) {
-          let mm: string, yyyy: string;
+          let dd: number, mm: number, yyyy: number;
           if (pattern === datePatterns[1]) {
-            // YYYY-MM-DD
-            yyyy = match[1];
-            mm = match[2];
+            yyyy = parseInt(match[1]);
+            mm = parseInt(match[2]);
+            dd = parseInt(match[3]);
           } else {
-            // DD/MM/YYYY or DD-MM-YYYY
-            mm = match[2];
-            yyyy = match[3];
+            dd = parseInt(match[1]);
+            mm = parseInt(match[2]);
+            yyyy = parseInt(match[3]);
           }
-          const key = `${mm}${yyyy}`;
-          monthCounts[key] = (monthCounts[key] || 0) + 1;
+          if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 && yyyy >= 2000) {
+            allDates.push(new Date(yyyy, mm - 1, dd));
+          }
           break;
         }
       }
     }
   }
 
-  const entries = Object.entries(monthCounts);
-  if (entries.length === 0) return null;
-  entries.sort((a, b) => b[1] - a[1]);
-  return entries[0][0];
+  if (allDates.length === 0) return null;
+
+  allDates.sort((a, b) => a.getTime() - b.getTime());
+  const earliest = allDates[0];
+  const latest = allDates[allDates.length - 1];
+
+  const fromMM = `${String(earliest.getMonth() + 1).padStart(2, "0")}${earliest.getFullYear()}`;
+  const toMM = `${String(latest.getMonth() + 1).padStart(2, "0")}${latest.getFullYear()}`;
+
+  return {
+    from: fromMM,
+    to: toMM,
+    fromDate: `${earliest.getFullYear()}-${String(earliest.getMonth() + 1).padStart(2, "0")}-${String(earliest.getDate()).padStart(2, "0")}`,
+    toDate: `${latest.getFullYear()}-${String(latest.getMonth() + 1).padStart(2, "0")}-${String(latest.getDate()).padStart(2, "0")}`,
+  };
 }
 
 export default function NewReconciliation() {
@@ -83,14 +110,14 @@ export default function NewReconciliation() {
   const [setupGstin, setSetupGstin] = useState("");
   const [periods, setPeriods] = useState<Period[]>([]);
   const [taxPeriod, setTaxPeriod] = useState(currentTaxPeriod());
-  const [taxPeriodInferred, setTaxPeriodInferred] = useState(false);
+  const [inferredRange, setInferredRange] = useState<DateRange | null>(null);
   const [loadingContext, setLoadingContext] = useState(true);
 
   const [ledgerSource, setLedgerSource] = useState<LedgerSource>("tally");
-  const [ledgerFile, setLedgerFile] = useState<File | null>(null);
-  const [tallyImportedCount, setTallyImportedCount] = useState<number | null>(null);
+  const [ledgerFiles, setLedgerFiles] = useState<File[]>([]);
+  const [tallyImportedFile, setTallyImportedFile] = useState<File | null>(null);
 
-  const [gstr2bFile, setGstr2bFile] = useState<File | null>(null);
+  const [gstr2bFiles, setGstr2bFiles] = useState<File[]>([]);
   const [gstr2bSource, setGstr2bSource] = useState<Gstr2bSource>("upload");
   const [ledgerPreview, setLedgerPreview] = useState<Record<string, unknown>[]>([]);
   const [gstr2bPreview, setGstr2bPreview] = useState<Record<string, unknown>[]>([]);
@@ -137,49 +164,76 @@ export default function NewReconciliation() {
     }
   };
 
-  const tryInferPeriod = useCallback((rows: Record<string, unknown>[]) => {
-    const inferred = inferTaxPeriod(rows);
-    if (inferred && inferred.length === 6) {
-      setTaxPeriod(inferred);
-      setTaxPeriodInferred(true);
-    }
-  }, []);
+  const updateInference = useCallback(
+    (allRows: Record<string, unknown>[]) => {
+      const range = inferDateRange(allRows);
+      if (range) {
+        setInferredRange(range);
+        setTaxPeriod(range.from);
+      }
+    },
+    [],
+  );
 
-  const handleLedgerFile = useCallback(async (file: File) => {
-    setLedgerFile(file);
-    setError(null);
-    const preview = await getCsvPreviewRows(file).catch(() => []);
-    setLedgerPreview(preview);
-    tryInferPeriod(preview);
-  }, [tryInferPeriod]);
+  const handleLedgerFilesChange = useCallback(
+    async (files: File[]) => {
+      setLedgerFiles(files);
+      setError(null);
+      if (files.length === 0) {
+        setLedgerPreview([]);
+        return;
+      }
+      const preview = await getMultiFilePreviewRows(files);
+      setLedgerPreview(preview);
+      updateInference(preview);
+    },
+    [updateInference],
+  );
 
   const handleTallyFile = useCallback((file: File) => {
-    setLedgerFile(file);
-    setTallyImportedCount(1);
+    setTallyImportedFile(file);
     setError(null);
   }, []);
 
-  const handleGstr2bFile = useCallback(async (file: File) => {
-    setGstr2bFile(file);
-    setError(null);
-    const preview = await getCsvPreviewRows(file).catch(() => []);
-    setGstr2bPreview(preview);
-    if (!taxPeriodInferred) tryInferPeriod(preview);
-  }, [tryInferPeriod, taxPeriodInferred]);
+  const handleGstr2bFilesChange = useCallback(
+    async (files: File[]) => {
+      setGstr2bFiles(files);
+      setError(null);
+      if (files.length === 0) {
+        setGstr2bPreview([]);
+        return;
+      }
+      const preview = await getMultiFilePreviewRows(files);
+      setGstr2bPreview(preview);
+      if (!inferredRange) updateInference(preview);
+    },
+    [updateInference, inferredRange],
+  );
 
   const handleReconcile = async () => {
     if (!clientId) return;
-    const hasGstr2bInput = gstr2bSource === "gsp" || gstr2bFile;
-    if (!ledgerFile && !hasGstr2bInput) return;
+
+    const effectiveLedgerFile =
+      ledgerSource === "tally" ? tallyImportedFile : (ledgerFiles.length > 0 ? await mergeFiles(ledgerFiles) : null);
+    const effectiveGstr2bFile =
+      gstr2bSource === "gsp" ? null : (gstr2bFiles.length > 0 ? await mergeFiles(gstr2bFiles) : null);
+
+    const hasGstr2bInput = gstr2bSource === "gsp" || effectiveGstr2bFile;
+    if (!effectiveLedgerFile && !hasGstr2bInput) return;
 
     setIsReconciling(true);
     setError(null);
     try {
-      const period = await createPeriod(clientId, taxPeriod);
+      const period = await createPeriod(
+        clientId,
+        taxPeriod,
+        inferredRange?.fromDate,
+        inferredRange?.toDate,
+      );
       const check =
         gstr2bSource === "gsp"
-          ? await createCheckFromGsp(period.id, ledgerFile)
-          : await createCheck(period.id, ledgerFile, gstr2bFile);
+          ? await createCheckFromGsp(period.id, effectiveLedgerFile)
+          : await createCheck(period.id, effectiveLedgerFile, effectiveGstr2bFile);
       navigate(`/reconcile/${period.id}/${check.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run reconciliation");
@@ -188,10 +242,9 @@ export default function NewReconciliation() {
     }
   };
 
-  const canReconcile =
-    !loadingContext &&
-    (ledgerFile || gstr2bFile || gstr2bSource === "gsp") &&
-    !isReconciling;
+  const hasLedger = ledgerSource === "tally" ? !!tallyImportedFile : ledgerFiles.length > 0;
+  const hasGstr2b = gstr2bSource === "gsp" || gstr2bFiles.length > 0;
+  const canReconcile = !loadingContext && (hasLedger || hasGstr2b) && !isReconciling;
 
   if (needsSetup) {
     return (
@@ -238,6 +291,12 @@ export default function NewReconciliation() {
     );
   }
 
+  const rangeLabel = inferredRange
+    ? inferredRange.from === inferredRange.to
+      ? formatMonthLabel(inferredRange.from)
+      : `${formatMonthLabel(inferredRange.from)} — ${formatMonthLabel(inferredRange.to)}`
+    : null;
+
   return (
     <div>
       <Header title="New Reconciliation" />
@@ -260,7 +319,7 @@ export default function NewReconciliation() {
                       key={p.id}
                       onClick={() => {
                         setTaxPeriod(p.tax_period);
-                        setTaxPeriodInferred(false);
+                        setInferredRange(null);
                       }}
                       className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                         taxPeriod === p.tax_period
@@ -278,20 +337,20 @@ export default function NewReconciliation() {
               <label className="text-sm font-medium mb-2 block">
                 Or a new period (MMYYYY)
               </label>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Input
                   value={taxPeriod}
                   onChange={(e) => {
                     setTaxPeriod(e.target.value.replace(/\D/g, "").slice(0, 6));
-                    setTaxPeriodInferred(false);
+                    setInferredRange(null);
                   }}
                   placeholder={currentTaxPeriod()}
                   className="max-w-[160px] font-mono"
                 />
-                {taxPeriodInferred && (
+                {rangeLabel && (
                   <Badge variant="secondary" className="gap-1 text-[10px]">
                     <CalendarCheck className="h-3 w-3" />
-                    Detected from file
+                    {rangeLabel}
                   </Badge>
                 )}
               </div>
@@ -328,24 +387,23 @@ export default function NewReconciliation() {
                 )}
               >
                 <Upload className="h-3.5 w-3.5" />
-                Upload File
+                Upload Files
               </button>
             </div>
 
             {ledgerSource === "tally" ? (
-              <TallyConnect onFileReady={handleTallyFile} importedCount={tallyImportedCount} />
+              <TallyConnect
+                onFileReady={handleTallyFile}
+                importedCount={tallyImportedFile ? 1 : null}
+              />
             ) : (
               <>
                 <FileUploader
                   label="Upload Purchase Register"
                   description="Tally IGST / CGST+SGST export — XLSX or CSV"
                   accept=".xlsx,.xls,.csv"
-                  file={ledgerFile}
-                  onFileSelect={handleLedgerFile}
-                  onFileClear={() => {
-                    setLedgerFile(null);
-                    setLedgerPreview([]);
-                  }}
+                  files={ledgerFiles}
+                  onFilesChange={handleLedgerFilesChange}
                 />
                 {ledgerPreview.length > 0 && (
                   <FilePreview rows={ledgerPreview} title="Purchase Register" />
@@ -372,7 +430,7 @@ export default function NewReconciliation() {
                 )}
               >
                 <Upload className="h-3.5 w-3.5" />
-                Upload File
+                Upload Files
               </button>
               <button
                 onClick={() => setGstr2bSource("gsp")}
@@ -386,21 +444,6 @@ export default function NewReconciliation() {
                 <Globe className="h-3.5 w-3.5" />
                 Fetch from GST Portal
               </button>
-              <button
-                onClick={() => setGstr2bSource("portal")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors relative",
-                  gstr2bSource === "portal"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Clock className="h-3.5 w-3.5" />
-                Auto-Fetch
-                <Badge className="absolute -top-2 -right-2 text-[8px] px-1 py-0" variant="secondary">
-                  Soon
-                </Badge>
-              </button>
             </div>
 
             {gstr2bSource === "upload" ? (
@@ -409,18 +452,14 @@ export default function NewReconciliation() {
                   label="Upload GSTR-2B"
                   description="Government portal download — XLSX or CSV"
                   accept=".xlsx,.xls,.csv"
-                  file={gstr2bFile}
-                  onFileSelect={handleGstr2bFile}
-                  onFileClear={() => {
-                    setGstr2bFile(null);
-                    setGstr2bPreview([]);
-                  }}
+                  files={gstr2bFiles}
+                  onFilesChange={handleGstr2bFilesChange}
                 />
                 {gstr2bPreview.length > 0 && (
                   <FilePreview rows={gstr2bPreview} title="GSTR-2B" />
                 )}
               </>
-            ) : gstr2bSource === "gsp" ? (
+            ) : (
               <div className="rounded-lg border-2 border-dashed border-muted-foreground/25 p-5">
                 <div className="flex items-start gap-3">
                   <div className="rounded-full bg-muted p-2 shrink-0">
@@ -441,46 +480,12 @@ export default function NewReconciliation() {
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="rounded-lg border-2 border-dashed border-muted-foreground/25 p-6 space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-muted p-2 shrink-0">
-                    <Clock className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium flex items-center gap-2">
-                      GSTR-2B Auto-Fetch
-                      <Badge variant="secondary">Coming Soon</Badge>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Automatically pull GSTR-2B data directly from the GST portal using your credentials.
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-3 pl-11">
-                  <p className="text-xs font-medium text-muted-foreground">How it will work:</p>
-                  <div className="space-y-2">
-                    {[
-                      { step: "1", text: "Connect your GST portal credentials (one-time setup)" },
-                      { step: "2", text: "We authenticate via OTP to the GSP API on your behalf" },
-                      { step: "3", text: "GSTR-2B is fetched automatically for the selected tax period" },
-                      { step: "4", text: "Data is reconciled instantly — no file download needed" },
-                    ].map((item) => (
-                      <div key={item.step} className="flex items-start gap-2">
-                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
-                          {item.step}
-                        </div>
-                        <p className="text-xs text-muted-foreground">{item.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
             )}
 
             <p className="text-xs text-muted-foreground">
               You can upload either file on its own, or both together — re-uploading
               later in the same period lets you see what changed since the last check.
+              Multiple files per section will be merged automatically.
             </p>
           </CardContent>
         </Card>

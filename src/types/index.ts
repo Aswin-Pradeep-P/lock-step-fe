@@ -36,6 +36,8 @@ export interface Period {
   cutoff_date: string;
   gstr2b_date: string;
   filing_due: string;
+  from_date: string | null;
+  to_date: string | null;
   created_at: string;
 }
 

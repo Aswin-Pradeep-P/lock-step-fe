@@ -79,10 +79,20 @@ export async function fetchPeriods(clientId: string): Promise<Period[]> {
   return request<Period[]>(`/periods?client_id=${clientId}`);
 }
 
-export async function createPeriod(clientId: string, taxPeriod: string): Promise<Period> {
+export async function createPeriod(
+  clientId: string,
+  taxPeriod: string,
+  fromDate?: string,
+  toDate?: string,
+): Promise<Period> {
   return request<Period>("/periods", {
     method: "POST",
-    body: JSON.stringify({ client_id: clientId, tax_period: taxPeriod }),
+    body: JSON.stringify({
+      client_id: clientId,
+      tax_period: taxPeriod,
+      ...(fromDate ? { from_date: fromDate } : {}),
+      ...(toDate ? { to_date: toDate } : {}),
+    }),
   });
 }
 
