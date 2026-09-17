@@ -1,7 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { Invoice, Headline, InvoiceAction, ActionType } from "@/types";
-import { STATUS_LABEL, bucketOf } from "@/lib/risk";
+import { STATUS_LABEL, bucketOf, riskExposure } from "@/lib/risk";
 import { fetchInvoiceActions } from "@/lib/api";
 
 const ACTION_LABEL: Record<ActionType, string> = {
@@ -33,15 +33,17 @@ export async function exportToPDF(
     28,
   );
 
-  // Summary
+  const exposure = riskExposure(invoices);
+
+  // Summary — Moderate + High, same aggregate as the results headline / cards
   doc.setFontSize(12);
   doc.text("Summary", 14, 38);
   autoTable(doc, {
     startY: 42,
     head: [["ITC at Risk", "Invoices at Risk", "Vendors Not Filed", "Total Invoices"]],
     body: [[
-      fmtCurrency(Number(headline.amount_at_risk)),
-      String(headline.invoices_at_risk),
+      fmtCurrency(exposure.amount),
+      String(exposure.count),
       String(headline.vendors_not_filed),
       String(invoices.length),
     ]],

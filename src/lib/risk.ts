@@ -13,6 +13,22 @@ export function bucketOf(status: InvoiceMatchStatus): RiskBucket {
   return "high";
 }
 
+/** Above-the-fold exposure = Moderate + High (same universe as SummaryCards). */
+export function riskExposure(invoices: Invoice[]): { count: number; amount: number } {
+  const atRisk = invoices.filter((i) => bucketOf(i.status) !== "safe");
+  return {
+    count: atRisk.length,
+    amount: atRisk.reduce((sum, i) => sum + Number(i.total_tax), 0),
+  };
+}
+
+/** Count of Moderate + High from the headline's per-status breakdown. */
+export function riskInvoiceCountFromHeadline(headline: Headline): number {
+  return (Object.keys(headline.status_counts) as InvoiceMatchStatus[])
+    .filter((status) => bucketOf(status) !== "safe")
+    .reduce((sum, status) => sum + (headline.status_counts[status] ?? 0), 0);
+}
+
 export const BUCKET_LABEL: Record<RiskBucket, string> = {
   safe: "Safe",
   moderate: "Moderate Risk",
