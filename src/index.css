@@ -48,6 +48,22 @@
     @apply bg-background text-foreground font-sans antialiased;
     margin: 0;
   }
+
+  /* Pointer cursor on interactive elements by default. This is in @layer base, so
+     any explicit cursor-* utility on an element still wins (e.g. disabled controls,
+     the file dropzone). Disabled buttons and aria-disabled controls are excluded. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="option"],
+  [role="menuitem"]:not([data-disabled]),
+  [role="menuitemcheckbox"]:not([data-disabled]),
+  [role="menuitemradio"]:not([data-disabled]),
+  a[href],
+  summary,
+  label:has(> input:is([type="checkbox"], [type="radio"])) {
+    cursor: pointer;
+  }
 }
 
 /* Toast enter/leave — used by src/components/ui/toast.tsx */
